@@ -1,5 +1,6 @@
 from odoo import api, fields, models
 from odoo.fields import Command
+from odoo.tools.misc import format_date
 
 from ..models.account_loan import LOAN_TYPES
 
@@ -39,7 +40,7 @@ class AccountLoanReport(models.TransientModel):
         self._compute_lines()
         return {
             'type': 'ir.actions.act_window',
-            'name': self.env._('Loans and Leases at %s', self.date),
+            'name': self.env._('Loans and Leases at %s', format_date(self.env, self.date)),
             'res_model': 'account.loan.report.line',
             'view_mode': 'list,pivot',
             'domain': [('report_id', '=', self.id)],

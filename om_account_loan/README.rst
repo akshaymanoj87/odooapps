@@ -53,8 +53,16 @@ Features
 * A withholding tax on the interest, where the law asks for one: deducted
   from what is paid to the lender and booked on the account of the tax (see
   The withholding tax below).
-* Record rules per company; the accounting administrators run the loans,
-  the accountants and auditors read them, the invoicing users do not see them.
+* Record rules per company; the accountants (Show Full Accounting Features)
+  and the accounting administrators run the loans, the administrators alone
+  delete them and set the defaults, the auditors read them, the invoicing
+  users do not see them.
+* The schedule protects itself: a paid instalment, a posted operation or an
+  entry of the loan is changed by cancelling it on the loan, not from
+  Accounting nor through the API; the lender and the loan accounts are fixed
+  once the loan has entries, its terms once it runs.
+* Lock dates: an entry dated in a locked period is refused, with the lock
+  date, rather than posted on a later date than its schedule.
 
 The journal entries
 ===================
@@ -121,7 +129,9 @@ The schedule is computed again, keeping the paid lines, after each event:
 * A rate change computes again the unpaid lines due from its date: those
   after it with the rate per period (a period takes the rate in force on its
   first day), those on or after it with the actual days, which split a period
-  at the change.
+  at the change. It is dated after the last paid instalment.
+* A payment is dated on or after the start of the loan and the payment of the
+  instalment before it. An instalment is paid once the loan is drawn down.
 * Changing the rate or the number of payments of a running loan computes the
   unpaid lines again.
 
@@ -201,8 +211,10 @@ are posted, or left in draft to check (Lease Bills on the lease); the taxes on
 the bills (such as the VAT) go on all the lines, the withholding tax on the
 interest line. The bill is then paid like any vendor bill.
 
-The amounts come from the schedule: change the line before billing it. The
-bills are in the order of the schedule. The last bill can be cancelled from the
+The amounts come from the schedule: change the line before billing it. A
+draft bill keeps the lessor, the currency and the amount before taxes of its
+lease payment: posting it refuses a bill changed otherwise (the taxes may
+change). The bills are in the order of the schedule. The last bill can be cancelled from the
 lease, when it is not paid: a posted bill is reversed by a credit note, a draft
 one is cancelled. Post the draft bills before reclassifying.
 
@@ -332,18 +344,24 @@ Usage
 
 * Accounting > Loans > Loans: create the loan, check the schedule computed on
   confirmation, then click Draw Down for each tranche.
-* Pay the instalments with the Pay button of their line, or from
-  Accounting > Loans > Instalments, which lists the instalments to pay of every
-  loan.
+* Pay the instalments with the Pay button of the next line, or from
+  Accounting > Loans > Instalments, which lists the instalments due within 30
+  days of every loan, by due date (remove the filter for all of them).
 * Accounting > Loans > Leases: create the lease and confirm it, which
   recognizes it; bill the payments with the Bill button of their line, or let
   the scheduled action bill them on their due dates; pay the bills as any
   vendor bill.
-* Early Repayment on the loan repays part or all of the principal.
+* Early Repayment on the loan repays part or all of the principal: enter
+  the principal repaid (all of it closes the loan).
 * For a floating rate, add the rate changes in the Rate Changes tab.
 * At each period end, run Accounting > Loans > Reclassification.
-* Reporting > Management > Loans shows the position of the loans and of the
-  leases at a date (or of one type), and prints it.
+* Reporting > Management > Loans and Leases shows the position of the loans
+  and of the leases at a date (or of one type), and prints it.
+
+The Accounting menu of Invoicing, where the Loans are, shows to the users with
+Show Full Accounting Features (Settings > Users, in developer mode), as for the
+other accounting menus; Odoo 20 Accounting Community (om_account_accountant)
+gives it to every accountant.
 
 Right-of-use assets
 ===================

@@ -6,17 +6,17 @@
         <field name="model">account.loan</field>
         <field name="report_type">qweb-pdf</field>
         <field name="report_name">om_account_loan.report_loan</field>
-        <field name="print_report_name">'Loan - %s' % object.name.replace('/', '-')</field>
+        <field name="print_report_name">'%s - %s' % ('Lease' if object.loan_type == 'lease' else 'Loan', object.name.replace('/', '-'))</field>
         <field name="binding_model_id" ref="model_account_loan"/>
         <field name="binding_type">report</field>
     </record>
 
     <record id="action_report_loan_position" model="ir.actions.report">
-        <field name="name">Loan Report</field>
+        <field name="name">Loans and Leases</field>
         <field name="model">account.loan.report</field>
         <field name="report_type">qweb-pdf</field>
         <field name="report_name">om_account_loan.report_loan_position</field>
-        <field name="print_report_name">'Loans at %s' % object.date</field>
+        <field name="print_report_name">'Loans and Leases at %s' % object.date</field>
     </record>
 
     <template id="report_loan_document">
@@ -36,14 +36,15 @@
                         <div t-if="o.loan_type == 'lease'">Lease payment: <span t-field="o.lease_payment"/></div>
                         <div t-if="o.loan_type == 'lease'">Lease liability: <span t-field="o.principal"/></div>
                         <div t-else="">Principal: <span t-field="o.principal"/></div>
-                        <div><span t-field="o.payment_count"/> <span t-field="o.payment_frequency"/> payments
-                            from <span t-field="o.date_first_payment"/></div>
-                        <div><span t-field="o.schedule_method"/>, <span t-field="o.interest_method"/></div>
+                        <div>Payments: <span t-field="o.payment_count"/> (<span t-field="o.payment_frequency"/>)</div>
+                        <div>First due: <span t-field="o.date_first_payment"/></div>
+                        <div t-if="o.loan_type != 'lease'">Schedule: <span t-field="o.schedule_method"/></div>
+                        <div>Interest: <span t-field="o.interest_method"/></div>
                     </div>
                     <div class="col-4">
                         <strong>Rate</strong>
-                        <div><span t-field="o.rate_type"/>: <span t-out="o.rate"
-                                t-options="{'widget': 'float', 'precision': 4}"/> % a year</div>
+                        <div>Annual rate: <span t-out="o.rate" t-options="{'widget': 'float', 'precision': 4}"/> %</div>
+                        <div t-if="o.loan_type != 'lease'">Rate type: <span t-field="o.rate_type"/></div>
                         <div t-if="o.withholding_tax_id">Withholding tax: <span t-field="o.withholding_tax_id"/></div>
                         <div t-foreach="o.rate_line_ids" t-as="rate_change">
                             From <span t-field="rate_change.date"/>: <span t-out="rate_change.rate"
@@ -52,11 +53,21 @@
                     </div>
                 </div>
                 <div class="row mb-3" id="loan_position" t-if="o.state != 'draft'">
-                    <div class="col-3"><strong>Drawn</strong><div t-field="o.drawn_amount"/></div>
-                    <div class="col-3"><strong>Outstanding</strong><div t-field="o.outstanding_amount"/></div>
+                    <div class="col-3">
+                        <strong t-if="o.loan_type == 'lease'">Recognized</strong>
+                        <strong t-else="">Drawn</strong>
+                        <div t-field="o.drawn_amount"/>
+                    </div>
+                    <div class="col-3">
+                        <strong t-if="o.loan_type == 'lease'">Outstanding Liability</strong>
+                        <strong t-else="">Outstanding</strong>
+                        <div t-field="o.outstanding_amount"/>
+                    </div>
                     <div class="col-3" t-if="o.next_line_id">
-                        <strong>Next Instalment</strong>
-                        <div><span t-field="o.next_amount"/> on <span t-field="o.next_date"/></div>
+                        <strong t-if="o.loan_type == 'lease'">Next Lease Payment</strong>
+                        <strong t-else="">Next Instalment</strong>
+                        <div t-field="o.next_amount"/>
+                        <div>Due: <span t-field="o.next_date"/></div>
                     </div>
                     <div class="col-3"><strong>Status</strong><div t-field="o.state"/></div>
                 </div>
@@ -88,7 +99,8 @@
                             <td class="text-end" t-if="o.withholding_tax_id"><span t-field="line.net_amount"/></td>
                             <td class="text-end"><span t-field="line.closing_balance"/></td>
                             <td>
-                                <span t-field="line.state"/>
+                                <span t-if="o.loan_type == 'lease'" t-field="line.bill_status"/>
+                                <span t-else="" t-field="line.state"/>
                                 <t t-if="line.payment_date"> <span t-field="line.payment_date"/></t>
                             </td>
                         </tr>

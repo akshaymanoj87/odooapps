@@ -80,6 +80,8 @@ class TestLoanSecurity(LoanCommon):
             cls.env, login='loan_accountant', groups='account.group_account_user', company_id=company.id)
         cls.invoicing = new_test_user(
             cls.env, login='loan_invoicing', groups='account.group_account_invoice', company_id=company.id)
+        cls.auditor = new_test_user(
+            cls.env, login='loan_auditor', groups='account.group_account_readonly', company_id=company.id)
 
     def test_manager_runs_loans(self):
         loan = self._create_loan(confirm=False).with_user(self.manager)
@@ -90,23 +92,42 @@ class TestLoanSecurity(LoanCommon):
             {'line_id': loan.line_ids.sorted('sequence')[0].id}).action_confirm()
         self.assertEqual(loan.line_ids.sorted('sequence')[0].state, 'posted')
 
-    def test_accountant_reads(self):
+    def test_accountant_runs_loans(self):
+        """ The accountant runs the loans: creates, confirms, draws, pays, repays, reclassifies; the
+        administrator alone deletes them. """
+        loan = self.env['account.loan'].with_user(self.accountant).create({
+            'partner_id': self.lender.id, 'principal': 100000.0, 'date_start': date(2025, 1, 1),
+            'date_first_payment': date(2025, 2, 1), 'payment_count': 12, 'rate': 6.0})
+        loan.action_confirm()
+        self.env['account.loan.drawdown'].with_user(self.accountant).create(
+            {'loan_id': loan.id, 'date': loan.date_start}).action_confirm()
+        line = loan.line_ids.sorted('sequence')[0]
+        self.env['account.loan.pay'].with_user(self.accountant).create({'line_id': line.id}).action_confirm()
+        self.assertEqual(line.state, 'posted')
+        self.env['account.loan.repay'].with_user(self.accountant).create(
+            {'loan_id': loan.id, 'date': date(2025, 2, 15), 'amount': 1000.0}).action_confirm()
+        self.env['account.loan.reclassify'].with_user(self.accountant).create(
+            {'date': date(2025, 2, 28), 'loan_ids': [Command.set(loan.ids)]}).action_confirm()
+        report = self.env['account.loan.report'].with_user(self.accountant).create({'date': date(2025, 2, 28)})
+        report._compute_lines()
+        self.assertEqual(report.line_ids.loan_id, loan)
+        draft = self.env['account.loan'].with_user(self.accountant).create(
+            {'partner_id': self.lender.id, 'principal': 1000.0})
+        with self.assertRaises(AccessError):
+            draft.unlink()
+        draft.with_user(self.manager).unlink()
+
+    def test_auditor_reads(self):
         loan = self._create_loan()
         self._draw(loan)
-        loan = loan.with_user(self.accountant)
+        loan = loan.with_user(self.auditor)
         self.assertEqual(loan.outstanding_amount, 100000.0)
         self.assertTrue(loan.line_ids.mapped('amount'))
         self.assertTrue(loan.move_ids)
         with self.assertRaises(AccessError):
             loan.lender_ref = 'X'
         with self.assertRaises(AccessError):
-            self.env['account.loan'].with_user(self.accountant).create({
-                'partner_id': self.lender.id, 'principal': 1000.0})
-        with self.assertRaises(AccessError):
-            self.env['account.loan.drawdown'].with_user(self.accountant).create({'loan_id': loan.id})
-        report = self.env['account.loan.report'].with_user(self.accountant).create({'date': date(2025, 1, 31)})
-        report._compute_lines()
-        self.assertEqual(report.line_ids.loan_id, loan)
+            self.env['account.loan.drawdown'].with_user(self.auditor).create({'loan_id': loan.id})
 
     def test_invoicing_user_no_access(self):
         loan = self._create_loan()

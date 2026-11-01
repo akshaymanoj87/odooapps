@@ -1,5 +1,6 @@
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools.misc import format_date
 
 
 class AccountLoanDrawdown(models.TransientModel):
@@ -72,5 +73,6 @@ class AccountLoanDrawdown(models.TransientModel):
         })
         loan._generate_schedule()
         loan.message_post(body=self.env._(
-            'Drawdown of %(amount)s on %(date)s.', amount=loan.currency_id.format(self.amount), date=self.date))
+            'Drawdown of %(amount)s on %(date)s.', amount=loan.currency_id.format(self.amount),
+            date=format_date(self.env, self.date)))
         return {'type': 'ir.actions.act_window_close'}

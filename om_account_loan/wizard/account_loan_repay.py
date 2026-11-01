@@ -2,8 +2,10 @@ import math
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools.misc import format_date
 
 from odoo.addons.om_account_loan.models.account_loan import annuity_count
+from odoo.addons.om_account_loan.models.loan_context import NO_REGENERATE, SCHEDULE_UPDATE, internal_context
 
 
 class AccountLoanRepay(models.TransientModel):
@@ -40,8 +42,9 @@ class AccountLoanRepay(models.TransientModel):
 
     @api.depends('loan_id')
     def _compute_amount(self):
+        # to enter: a full repayment closes the loan, it is not the default
         for wizard in self:
-            wizard.amount = wizard.loan_id.outstanding_amount
+            wizard.amount = 0.0
 
     @api.depends('loan_id', 'date')
     def _compute_interest(self):
@@ -84,7 +87,8 @@ class AccountLoanRepay(models.TransientModel):
         loan._check_paid_up_to(self.date)
         due = loan.line_ids.filtered(lambda line: line.state == 'draft' and line.date <= self.date)
         if due:
-            raise UserError(self.env._('Pay the instalments due on or before %s first.', self.date))
+            raise UserError(self.env._(
+                'Pay the instalments due on or before %s first.', format_date(self.env, self.date)))
         if self.journal_id.currency_id and self.journal_id.currency_id != currency:
             raise UserError(self.env._('The bank journal is not in the currency of the loan.'))
 
@@ -115,11 +119,12 @@ class AccountLoanRepay(models.TransientModel):
         label = self.env._('%(loan)s - Early repayment', loan=loan.name)
         lines = loan._principal_lines(self.amount, self.date, label)
         lines.append((loan.account_interest_id, self.interest,
-                      self.env._('%(loan)s - Interest to %(date)s', loan=loan.name, date=self.date),
+                      self.env._('%(loan)s - Interest to %(date)s', loan=loan.name,
+                                 date=format_date(self.env, self.date)),
                       loan._interest_line_values() if self.withholding else {}))
         lines += loan._withholding_lines(
             self.interest, self.withholding, self.date,
-            self.env._('%(loan)s - Withholding tax to %(date)s', loan=loan.name, date=self.date))
+            self.env._('%(loan)s - Withholding tax to %(date)s', loan=loan.name, date=format_date(self.env, self.date)))
         lines.append((loan._bank_account(self.journal_id, 'outbound'), 0.0, label))
         move = loan._create_move(self.journal_id, self.date, lines, 'repayment', label)
         balance = currency.round(loan.outstanding_amount - self.amount)
@@ -139,13 +144,14 @@ class AccountLoanRepay(models.TransientModel):
             'payment_count_before': loan.payment_count,
         })
         if self.is_full:
-            loan.line_ids.filtered(lambda line: line.state == 'draft').with_context(
-                loan_schedule_update=True).unlink()
+            unpaid = loan.line_ids.filtered(lambda line: line.state == 'draft')
+            unpaid.with_context(**internal_context(SCHEDULE_UPDATE)).unlink()
         else:
             if count != loan.payment_count:
-                loan.with_context(loan_no_regenerate=True).payment_count = count
+                loan.with_context(**internal_context(NO_REGENERATE)).payment_count = count
             loan._generate_schedule()
         loan._update_state()
         loan.message_post(body=self.env._(
-            'Early repayment of %(amount)s on %(date)s.', amount=currency.format(self.amount), date=self.date))
+            'Early repayment of %(amount)s on %(date)s.', amount=currency.format(self.amount),
+            date=format_date(self.env, self.date)))
         return {'type': 'ir.actions.act_window_close'}

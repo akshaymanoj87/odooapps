@@ -31,7 +31,7 @@
     </record>
 
     <record id="action_account_loan_report" model="ir.actions.act_window">
-        <field name="name">Loan Report</field>
+        <field name="name">Loans and Leases</field>
         <field name="res_model">account.loan.report</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>

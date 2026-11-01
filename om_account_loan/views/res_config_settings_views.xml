@@ -6,7 +6,7 @@
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="account.res_config_settings_view_form"/>
         <field name="arch" type="xml">
-            <block id="default_accounts" position="after">
+            <block id="account_digitalization" position="after">
                 <block title="Loans" id="loan_settings">
                     <setting id="loan_accounts" string="Loan accounts" company_dependent="1"
                              help="The accounts proposed on the new loans.">
@@ -26,10 +26,10 @@
                         </div>
                     </setting>
                     <setting id="loan_journals" string="Loan journals" company_dependent="1"
-                             help="The journals proposed on the new loans: the reclassifications go to the loan journal, the drawdowns and payments to the bank journal.">
+                             help="The journals proposed on the new loans: the reclassifications and the initial recognition of the leases go to the loan journal, the drawdowns and payments to the bank journal.">
                         <div class="content-group">
                             <div class="row mt8">
-                                <label for="loan_journal_id" string="Loans" class="col-lg-4 o_light_label"/>
+                                <label for="loan_journal_id" string="Loans / Leases" class="col-lg-4 o_light_label"/>
                                 <field name="loan_journal_id"/>
                             </div>
                             <div class="row mt8">

@@ -6,6 +6,7 @@
         <field name="code">account.loan</field>
         <field name="prefix">LOAN/%(year)s/</field>
         <field name="padding">4</field>
+        <field name="use_date_range" eval="True"/>
         <field name="company_id" eval="False"/>
     </record>
 
@@ -14,6 +15,7 @@
         <field name="code">account.loan.lease</field>
         <field name="prefix">LEASE/%(year)s/</field>
         <field name="padding">4</field>
+        <field name="use_date_range" eval="True"/>
         <field name="company_id" eval="False"/>
     </record>
 

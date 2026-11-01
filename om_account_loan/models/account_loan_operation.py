@@ -1,5 +1,12 @@
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools.misc import format_date
+
+from .loan_context import LOAN_REVERSE, LOAN_WRITE, NO_REGENERATE, internal, internal_context
+
+# what a posted operation is booked with, changed by the loan only
+POSTED_FIELDS = {'loan_id', 'operation_type', 'date', 'amount', 'interest', 'withholding', 'journal_id', 'move_id',
+                 'state', 'after_repayment', 'payment_count_before'}
 
 
 class AccountLoanOperation(models.Model):
@@ -34,6 +41,12 @@ class AccountLoanOperation(models.Model):
         for operation in self:
             operation.total = operation.amount + operation.interest
 
+    def write(self, vals):
+        if POSTED_FIELDS & set(vals) and not internal(self.env, LOAN_WRITE) \
+                and self.filtered(lambda op: op.state == 'posted'):
+            raise UserError(self.env._('A posted operation of a loan is changed by cancelling it on the loan.'))
+        return super().write(vals)
+
     @api.ondelete(at_uninstall=False)
     def _unlink_except_posted(self):
         if self.filtered(lambda op: op.state == 'posted'):
@@ -46,7 +59,7 @@ class AccountLoanOperation(models.Model):
             paid = loan.line_ids.filtered(lambda line: line.state == 'posted' and line.date >= operation.date)
             if paid:
                 raise UserError(self.env._(
-                    'Cancel the payment of the instalments due after %s first.', operation.date))
+                    'Cancel the payment of the instalments due after %s first.', format_date(self.env, operation.date)))
             later = loan.operation_ids.filtered(
                 lambda op: op.state == 'posted' and (op.date, op.id) > (operation.date, operation.id))
             if later:
@@ -54,18 +67,19 @@ class AccountLoanOperation(models.Model):
             if operation.operation_type in ('drawdown', 'recognition'):
                 if loan.currency_id.compare_amounts(loan.outstanding_amount, operation.amount) < 0:
                     raise UserError(self.env._('Without the drawdown, the loan would repay more than it draws.'))
-            if operation.move_id:
-                operation.move_id.with_context(loan_reverse=True)._reverse_moves(
-                    [{'date': operation.move_id.date}], cancel=True)
-            operation.state = 'cancel'
+            move = operation.move_id
+            if move:
+                loan._check_lock_dates(move.date, move.journal_id, has_tax=bool(move.line_ids.tax_line_id))
+                move.with_context(**internal_context(LOAN_REVERSE))._reverse_moves([{'date': move.date}], cancel=True)
+            operation.with_context(**internal_context(LOAN_WRITE)).state = 'cancel'
             if operation.after_repayment == 'term' and operation.payment_count_before:
-                loan.with_context(loan_no_regenerate=True).payment_count = operation.payment_count_before
+                loan.with_context(**internal_context(NO_REGENERATE)).payment_count = operation.payment_count_before
             if loan.state == 'closed':
                 loan.state = 'running'
             loan.message_post(body=self.env._(
                 '%(operation)s of %(date)s cancelled.',
                 operation=dict(self._fields['operation_type'].selection)[operation.operation_type],
-                date=operation.date))
+                date=format_date(self.env, operation.date)))
             loan._generate_schedule()
             loan._update_state()
 

@@ -7,10 +7,10 @@
         <menuitem id="menu_account_lease" name="Leases" action="action_account_lease" sequence="15"/>
         <menuitem id="menu_account_loan_line" name="Instalments" action="action_account_loan_line" sequence="20"/>
         <menuitem id="menu_account_loan_reclassify" name="Reclassification" action="action_account_loan_reclassify"
-                  sequence="30" groups="account.group_account_manager"/>
+                  sequence="30" groups="account.group_account_user,account.group_account_manager"/>
     </menuitem>
 
-    <menuitem id="menu_account_loan_report" name="Loans" action="action_account_loan_report"
+    <menuitem id="menu_account_loan_report" name="Loans and Leases" action="action_account_loan_report"
               parent="account.account_reports_management_menu" sequence="40"
               groups="account.group_account_readonly,account.group_account_manager"/>
 

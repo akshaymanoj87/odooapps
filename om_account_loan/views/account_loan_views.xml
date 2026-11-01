@@ -8,26 +8,26 @@
             <form string="Loan">
                 <header>
                     <button name="action_confirm" type="object" string="Confirm" class="btn-primary"
-                            invisible="state != 'draft'" groups="account.group_account_manager"/>
+                            invisible="state != 'draft'" groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_drawdown" type="object" string="Draw Down" class="btn-primary"
                             invisible="state != 'running' or undrawn_amount &lt;= 0 or loan_type == 'lease'"
-                            groups="account.group_account_manager"/>
+                            groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_recognize" type="object" string="Recognize" class="btn-primary"
                             invisible="state != 'running' or loan_type != 'lease' or drawn_amount"
-                            groups="account.group_account_manager"/>
+                            groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_repay" type="object" string="Early Repayment"
                             invisible="state != 'running' or outstanding_amount &lt;= 0 or loan_type == 'lease'"
-                            groups="account.group_account_manager"/>
+                            groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_import_schedule" type="object" string="Import Schedule"
                             invisible="state not in ('draft', 'running') or schedule_method != 'imported'"
-                            groups="account.group_account_manager"/>
+                            groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_compute_schedule" type="object" string="Compute Schedule"
-                            invisible="state not in ('draft', 'running')" groups="account.group_account_manager"/>
+                            invisible="state not in ('draft', 'running')" groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_cancel" type="object" string="Cancel"
                             invisible="state not in ('draft', 'running') or move_count"
-                            groups="account.group_account_manager"/>
+                            groups="account.group_account_user,account.group_account_manager"/>
                     <button name="action_draft" type="object" string="Reset to Draft"
-                            invisible="state != 'cancel'" groups="account.group_account_manager"/>
+                            invisible="state != 'cancel'" groups="account.group_account_user,account.group_account_manager"/>
                     <field name="state" widget="statusbar" statusbar_visible="draft,running,closed"/>
                 </header>
                 <sheet>
@@ -41,15 +41,15 @@
                     <widget name="web_ribbon" title="Cancelled" bg_color="text-bg-danger" invisible="state != 'cancel'"/>
                     <div class="oe_title">
                         <label for="name"/>
-                        <h1><field name="name"/></h1>
+                        <h1><field name="name" readonly="1" invisible="name == '/'"/><span invisible="name != '/'">New</span></h1>
                     </div>
                     <group>
                         <group name="loan">
                             <field name="loan_type" widget="radio" options="{'horizontal': true}"
                                    readonly="state != 'draft'"/>
-                            <field name="partner_id" readonly="state not in ('draft', 'running')"
+                            <field name="partner_id" readonly="state != 'draft' and move_count"
                                    invisible="loan_type == 'lease'"/>
-                            <field name="partner_id" string="Lessor" readonly="state not in ('draft', 'running')"
+                            <field name="partner_id" string="Lessor" readonly="state != 'draft' and move_count"
                                    invisible="loan_type != 'lease'"/>
                             <field name="lender_ref" readonly="state not in ('draft', 'running')"
                                    invisible="loan_type == 'lease'"/>
@@ -69,10 +69,12 @@
                             <field name="date_start" readonly="state != 'draft'"/>
                             <field name="payment_frequency" readonly="state != 'draft'"/>
                             <field name="date_first_payment" readonly="state != 'draft'"/>
-                            <field name="payment_count" readonly="state not in ('draft', 'running')"/>
+                            <field name="payment_count"
+                                   readonly="state not in ('draft', 'running') or (loan_type == 'lease' and state != 'draft')"/>
                             <field name="rate_type" readonly="state not in ('draft', 'running')"
                                    invisible="loan_type == 'lease'"/>
-                            <field name="rate" readonly="state not in ('draft', 'running')"
+                            <field name="rate"
+                                   readonly="state not in ('draft', 'running') or (loan_type == 'lease' and state != 'draft')"
                                    string="Annual Rate (%)" invisible="rate_type == 'floating'"/>
                             <field name="rate" readonly="state not in ('draft', 'running')"
                                    string="Initial Rate (%)" invisible="rate_type != 'floating'"/>
@@ -82,13 +84,16 @@
                             <field name="drawn_amount" invisible="loan_type == 'lease'"/>
                             <field name="undrawn_amount" invisible="loan_type == 'lease'"/>
                             <field name="drawn_amount" string="Recognized" invisible="loan_type != 'lease'"/>
-                            <field name="outstanding_amount"/>
+                            <field name="outstanding_amount" invisible="loan_type == 'lease'"/>
+                            <field name="outstanding_amount" string="Outstanding Liability" invisible="loan_type != 'lease'"/>
                             <field name="withholding_total" invisible="not withholding_tax_id"/>
                         </group>
                         <group name="next" invisible="state == 'draft'">
                             <field name="next_date" invisible="not next_date or state != 'running'"/>
-                            <field name="next_amount" invisible="not next_date or state != 'running'"/>
-                            <field name="date_end" invisible="not date_end"/>
+                            <field name="next_amount" invisible="not next_date or state != 'running' or loan_type == 'lease'"/>
+                            <field name="next_amount" string="Next Lease Payment"
+                                   invisible="not next_date or state != 'running' or loan_type != 'lease'"/>
+                            <field name="date_end" invisible="not date_end or loan_type == 'lease'"/>
                             <field name="lease_end" invisible="not lease_end"/>
                         </group>
                     </group>
@@ -102,7 +107,8 @@
                                     <field name="loan_type" column_invisible="True"/>
                                     <field name="sequence" readonly="1"/>
                                     <field name="date" readonly="state == 'posted'"/>
-                                    <field name="opening_balance" readonly="1"/>
+                                    <field name="is_next" column_invisible="True"/>
+                                    <field name="opening_balance" string="Opening" readonly="1"/>
                                     <field name="principal" sum="Total" readonly="state == 'posted'"/>
                                     <field name="interest" sum="Total" readonly="state == 'posted'"/>
                                     <field name="amount" sum="Total"/>
@@ -110,11 +116,11 @@
                                            column_invisible="not parent.withholding_tax_id"/>
                                     <field name="net_amount" sum="Total" optional="hide"
                                            column_invisible="not parent.withholding_tax_id"/>
-                                    <field name="closing_balance"/>
+                                    <field name="closing_balance" string="Closing"/>
                                     <field name="rate" optional="hide" readonly="1"/>
-                                    <field name="payment_date" optional="show"
+                                    <field name="payment_date" optional="hide"
                                            column_invisible="parent.loan_type == 'lease'"/>
-                                    <field name="payment_date" string="Billed On" optional="show"
+                                    <field name="payment_date" string="Billed On" optional="hide"
                                            column_invisible="parent.loan_type != 'lease'"/>
                                     <field name="state" widget="badge" decoration-success="state == 'posted'"
                                            decoration-info="state == 'draft'"
@@ -124,18 +130,16 @@
                                            decoration-warning="bill_status == 'draft'"
                                            column_invisible="parent.loan_type != 'lease'"/>
                                     <button name="action_pay" type="object" string="Pay" class="btn-link"
-                                            icon="payments"
-                                            invisible="state == 'posted' or loan_state != 'running' or loan_type == 'lease'"
-                                            groups="account.group_account_manager"/>
+                                            icon="payments" invisible="not is_next or loan_type == 'lease'"
+                                            groups="account.group_account_user,account.group_account_manager"/>
                                     <button name="action_create_bill" type="object" string="Bill" class="btn-link"
-                                            icon="article"
-                                            invisible="state == 'posted' or loan_state != 'running' or loan_type != 'lease'"
-                                            groups="account.group_account_manager"/>
+                                            icon="article" invisible="not is_next or loan_type != 'lease'"
+                                            groups="account.group_account_user,account.group_account_manager"/>
                                     <button name="action_open_move" type="object" title="Journal Entry"
                                             icon="open_in_new" invisible="not move_id"/>
                                     <button name="action_cancel_payment" type="object" title="Cancel the payment"
                                             icon="undo" invisible="not is_last_paid"
-                                            groups="account.group_account_manager"
+                                            groups="account.group_account_user,account.group_account_manager"
                                             confirm="The payment entry or the bill is reversed (or cancelled when in draft) and the instalment is to pay again."/>
                                     <field name="move_id" column_invisible="True"/>
                                 </list>
@@ -155,7 +159,7 @@
                                     <field name="move_id"/>
                                     <field name="state" widget="badge" decoration-success="state == 'posted'"/>
                                     <button name="action_cancel" type="object" title="Cancel" icon="undo"
-                                            invisible="state != 'posted'" groups="account.group_account_manager"
+                                            invisible="state != 'posted'" groups="account.group_account_user,account.group_account_manager"
                                             confirm="The entry is reversed and the schedule computed again."/>
                                 </list>
                             </field>
@@ -174,14 +178,15 @@
                         <page string="Accounting" name="accounting">
                             <group>
                                 <group string="Accounts" name="accounts">
-                                    <field name="account_long_term_id" readonly="state not in ('draft', 'running')"
+                                    <field name="account_long_term_id" readonly="state not in ('draft', 'running') or move_count"
                                            invisible="loan_type == 'lease'"/>
-                                    <field name="account_short_term_id" readonly="state not in ('draft', 'running')"
+                                    <field name="account_short_term_id" readonly="state not in ('draft', 'running') or move_count"
                                            invisible="loan_type == 'lease'"/>
                                     <field name="account_long_term_id" string="Long-term Lease Liability"
-                                           readonly="state not in ('draft', 'running')" invisible="loan_type != 'lease'"/>
+                                           readonly="state not in ('draft', 'running') or move_count" invisible="loan_type != 'lease'"/>
                                     <field name="account_short_term_id" string="Short-term Lease Liability"
-                                           readonly="state not in ('draft', 'running')" invisible="loan_type != 'lease'"/>
+                                           readonly="state not in ('draft', 'running') or move_count"
+                                           invisible="loan_type != 'lease'"/>
                                     <field name="account_interest_id" readonly="state not in ('draft', 'running')"/>
                                     <field name="account_rou_id" readonly="state != 'draft'"
                                            invisible="loan_type != 'lease'"/>
@@ -225,12 +230,12 @@
             <list string="Loans" decoration-muted="state in ('closed', 'cancel')" decoration-info="state == 'draft'">
                 <field name="currency_id" column_invisible="True"/>
                 <field name="name"/>
-                <field name="loan_type" optional="show"/>
+                <field name="loan_type" optional="hide"/>
                 <field name="partner_id"/>
                 <field name="lender_ref" optional="show"/>
                 <field name="date_start"/>
                 <field name="date_end" optional="show"/>
-                <field name="rate" optional="show"/>
+                <field name="current_rate" string="Rate (%)" optional="show"/>
                 <field name="principal" sum="Total"/>
                 <field name="outstanding_amount" sum="Total"/>
                 <field name="next_date" optional="show"/>
@@ -304,7 +309,7 @@
         <field name="name">account.loan.line.list</field>
         <field name="model">account.loan.line</field>
         <field name="arch" type="xml">
-            <list string="Instalments" create="0" edit="0" delete="0">
+            <list string="Instalments" create="0" edit="0" delete="0" default_order="date, loan_id, sequence">
                 <field name="currency_id" column_invisible="True"/>
                 <field name="loan_id"/>
                 <field name="loan_type" optional="show"/>
@@ -314,17 +319,21 @@
                 <field name="principal" sum="Total"/>
                 <field name="interest" sum="Total"/>
                 <field name="amount" sum="Total"/>
-                <field name="withholding" sum="Total" optional="show"/>
-                <field name="closing_balance"/>
+                <field name="withholding" sum="Total" optional="hide"/>
+                <field name="closing_balance" optional="show"/>
                 <field name="state" widget="badge" decoration-success="state == 'posted'"
-                       decoration-info="state == 'draft'"/>
+                       decoration-info="state == 'draft'" invisible="loan_type == 'lease'"/>
+                <field name="bill_status" widget="badge" decoration-success="bill_status == 'paid'"
+                       decoration-info="bill_status == 'to_bill'" decoration-warning="bill_status == 'draft'"
+                       invisible="loan_type != 'lease'"/>
                 <field name="loan_state" column_invisible="True"/>
+                <field name="is_next" column_invisible="True"/>
                 <button name="action_pay" type="object" string="Pay" class="btn-link" icon="payments"
-                        invisible="state == 'posted' or loan_state != 'running' or loan_type == 'lease'"
-                        groups="account.group_account_manager"/>
+                        invisible="not is_next or loan_type == 'lease'"
+                        groups="account.group_account_user,account.group_account_manager"/>
                 <button name="action_create_bill" type="object" string="Bill" class="btn-link" icon="article"
-                        invisible="state == 'posted' or loan_state != 'running' or loan_type != 'lease'"
-                        groups="account.group_account_manager"/>
+                        invisible="not is_next or loan_type != 'lease'"
+                        groups="account.group_account_user,account.group_account_manager"/>
             </list>
         </field>
     </record>
@@ -338,6 +347,9 @@
                 <field name="partner_id"/>
                 <filter name="to_pay" string="To Pay" domain="[('state', '=', 'draft'), ('loan_state', '=', 'running')]"/>
                 <filter name="paid" string="Paid" domain="[('state', '=', 'posted')]"/>
+                <separator/>
+                <filter name="due_soon" string="Due within 30 Days"
+                        domain="[('date', '&lt;=', (context_today() + relativedelta(days=30)).strftime('%Y-%m-%d'))]"/>
                 <separator/>
                 <filter name="loans" string="Loans" domain="[('loan_type', '=', 'loan')]"/>
                 <filter name="leases" string="Leases" domain="[('loan_type', '=', 'lease')]"/>
@@ -356,10 +368,11 @@
         <field name="res_model">account.loan.line</field>
         <field name="view_mode">list</field>
         <field name="search_view_id" ref="view_account_loan_line_search"/>
-        <field name="context">{'search_default_to_pay': 1}</field>
+        <field name="context">{'search_default_to_pay': 1, 'search_default_due_soon': 1}</field>
         <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">No instalment to pay</p>
-            <p>The instalments of the running loans and leases show here, to pay or bill them in their order.</p>
+            <p class="o_view_nocontent_smiling_face">No instalment due within 30 days</p>
+            <p>The instalments of the running loans and leases show here, to pay or bill them in their order. Remove
+                the filter to see all of them.</p>
         </field>
     </record>
 

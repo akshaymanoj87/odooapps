@@ -1,4 +1,6 @@
 from odoo import api, fields, models
+from odoo.exceptions import ValidationError
+from odoo.tools.misc import format_date
 
 
 class AccountLoanRate(models.Model):
@@ -13,6 +15,17 @@ class AccountLoanRate(models.Model):
 
     _unique_date = models.Constraint('UNIQUE(loan_id, date)', 'A loan has one rate change a day.')
     _positive_rate = models.Constraint('CHECK(rate >= 0)', 'The interest rate cannot be negative.')
+
+    @api.constrains('date', 'loan_id')
+    def _check_after_paid(self):
+        """ A rate cannot change in the periods already paid: their interest is booked. """
+        for change in self:
+            paid = change.loan_id.line_ids.filtered(lambda line: line.state == 'posted')
+            last = max(paid.mapped('date'), default=None)
+            if last and change.date <= last:
+                raise ValidationError(self.env._(
+                    'The loan %(loan)s is paid up to %(date)s: a rate change applies from a later date.',
+                    loan=change.loan_id.display_name, date=format_date(self.env, last)))
 
     @api.model_create_multi
     def create(self, vals_list):

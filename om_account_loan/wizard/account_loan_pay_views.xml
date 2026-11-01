@@ -10,6 +10,8 @@
                     <group>
                         <field name="line_id" readonly="1" invisible="1"/>
                         <field name="loan_id"/>
+                        <field name="line_sequence"/>
+                        <field name="line_date"/>
                         <field name="company_id" invisible="1"/>
                         <field name="currency_id" invisible="1"/>
                         <field name="date"/>
@@ -24,8 +26,9 @@
                         <field name="net_amount" invisible="not withholding_tax_id"/>
                     </group>
                 </group>
-                <div class="text-muted">
-                    A principal changed here moves the difference to the last instalment.
+                <field name="principal_changed" invisible="1"/>
+                <div class="text-muted" invisible="not principal_changed">
+                    The principal changed here: the difference moves to the last instalment.
                 </div>
                 <footer>
                     <button name="action_confirm" type="object" string="Pay" class="btn-primary"/>

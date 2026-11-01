@@ -8,6 +8,8 @@ class AccountLoanPay(models.TransientModel):
     _check_company_auto = True
 
     line_id = fields.Many2one('account.loan.line', string='Instalment', required=True)
+    line_sequence = fields.Integer(related='line_id.sequence', string='Instalment Number')
+    line_date = fields.Date(related='line_id.date', string='Due Date')
     loan_id = fields.Many2one(related='line_id.loan_id')
     company_id = fields.Many2one(related='line_id.company_id')
     currency_id = fields.Many2one(related='line_id.currency_id')
@@ -27,6 +29,7 @@ class AccountLoanPay(models.TransientModel):
         string='Withholding Tax', compute='_compute_withholding', store=True, readonly=False, precompute=True,
         help="The tax withheld on the interest, deducted from the payment to the lender.")
     net_amount = fields.Monetary(string='Paid to the Lender', compute='_compute_amount')
+    principal_changed = fields.Boolean(compute='_compute_amount')
 
     @api.depends('line_id')
     def _compute_date(self):
@@ -59,6 +62,8 @@ class AccountLoanPay(models.TransientModel):
         for wizard in self:
             wizard.amount = wizard.principal + wizard.interest
             wizard.net_amount = wizard.amount - wizard.withholding
+            wizard.principal_changed = bool(wizard.line_id) and bool(
+                wizard.currency_id.compare_amounts(wizard.principal, wizard.line_id.principal))
 
     def action_confirm(self):
         """ Post Dr loan (principal) + Dr interest / Cr withholding tax + Cr bank (outstanding payments) for the
@@ -66,6 +71,8 @@ class AccountLoanPay(models.TransientModel):
         self.ensure_one()
         line = self.line_id
         currency = line.currency_id
+        if currency.compare_amounts(self.principal, 0.0) < 0 or currency.compare_amounts(self.interest, 0.0) < 0:
+            raise UserError(self.env._('The principal and the interest paid cannot be negative.'))
         changes = {fname: self[fname] for fname in ('principal', 'interest')
                    if currency.compare_amounts(self[fname], line[fname])}
         if changes:

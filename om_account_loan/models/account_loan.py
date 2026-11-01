@@ -8,6 +8,9 @@ from dateutil.relativedelta import relativedelta
 from odoo import api, fields, models
 from odoo.exceptions import UserError, ValidationError
 from odoo.fields import Command, Domain
+from odoo.tools.misc import format_date
+
+from .loan_context import LOAN_WRITE, NO_REGENERATE, SCHEDULE_UPDATE, internal, internal_context
 
 PAYMENT_FREQUENCIES = [
     ('monthly', 'Monthly'),
@@ -18,6 +21,11 @@ PAYMENT_FREQUENCIES = [
 PAYMENTS_PER_YEAR = {'monthly': 12, 'quarterly': 4, 'semiannual': 2, 'annual': 1}
 LOAN_TYPES = [('loan', 'Loan'), ('lease', 'Lease')]
 ONE_DAY = timedelta(days=1)
+# the terms of the contract, fixed once the loan runs
+TERM_FIELDS = {'principal', 'currency_id', 'company_id', 'date_start', 'payment_frequency', 'date_first_payment',
+               'schedule_method', 'interest_method', 'loan_type', 'lease_payment', 'account_rou_id'}
+# what the entries of the loan are booked on, fixed once it has entries
+ENTRY_FIELDS = {'partner_id', 'account_long_term_id', 'account_short_term_id'}
 
 _logger = logging.getLogger(__name__)
 
@@ -137,7 +145,7 @@ class AccountLoan(models.Model):
         'account.journal', string='Loan Journal', check_company=True, tracking=True,
         domain="[('type', '=', 'general')]",
         default=lambda self: self.env.company.loan_journal_id,
-        help="The journal of the reclassifications.")
+        help="The miscellaneous journal of the reclassifications, and of the initial recognition of a lease.")
     bank_journal_id = fields.Many2one(
         'account.journal', string='Bank Journal', check_company=True, tracking=True,
         domain="[('type', 'in', ('bank', 'cash'))]",
@@ -196,7 +204,8 @@ class AccountLoan(models.Model):
     withholding_total = fields.Monetary(string='Total Withholding Tax', compute='_compute_totals')
     note = fields.Html(string='Notes')
 
-    _positive_principal = models.Constraint('CHECK(principal > 0)', 'The principal of a loan must be positive.')
+    # zero while a draft is filled in (a lease before its payment): checked when the loan is confirmed
+    _positive_principal = models.Constraint('CHECK(principal >= 0)', 'The principal of a loan cannot be negative.')
     _positive_count = models.Constraint('CHECK(payment_count > 0)', 'A loan has at least one payment.')
     _positive_rate = models.Constraint('CHECK(rate >= 0)', 'The interest rate cannot be negative.')
 
@@ -341,20 +350,40 @@ class AccountLoan(models.Model):
         return super().create(vals_list)
 
     def write(self, vals):
-        locked = {'principal', 'currency_id', 'company_id', 'date_start', 'payment_frequency', 'date_first_payment',
-                  'schedule_method', 'interest_method', 'loan_type', 'lease_payment'} & set(vals)
-        if locked and any(loan._has_entries() for loan in self):
+        own = internal(self.env, NO_REGENERATE)
+        if TERM_FIELDS & set(vals) and not own and any(
+                loan.state != 'draft' or loan._has_entries() for loan in self):
             raise UserError(self.env._(
-                'The terms of a loan with journal entries cannot change: use an early repayment or a rate change.'))
-        if {'rate', 'rate_type', 'payment_count'} & set(vals) and not self.env.context.get('loan_no_regenerate') \
+                'The terms of a running loan cannot change: use an early repayment or a rate change, or cancel the '
+                'loan and reset it to draft while it has no journal entries.'))
+        if ENTRY_FIELDS & set(vals) and any(loan._has_entries() for loan in self):
+            raise UserError(self.env._(
+                'The lender and the loan accounts of a loan with journal entries cannot change: its entries and '
+                'its balances are on them.'))
+        if 'move_ids' in vals and not internal(self.env, LOAN_WRITE):
+            raise UserError(self.env._('The journal entries of a loan are linked by the loan itself.'))
+        if 'payment_count' in vals and not own:
+            for loan in self:
+                paid = len(loan.line_ids.filtered(lambda line: line.state == 'posted'))
+                if vals['payment_count'] < paid:
+                    raise UserError(self.env._(
+                        'The loan %(loan)s has %(count)s paid instalments: it cannot have fewer payments.',
+                        loan=loan.display_name, count=paid))
+        if {'rate', 'rate_type', 'payment_count'} & set(vals) and not own \
                 and any(loan.loan_type == 'lease' and loan._has_entries() for loan in self):
             raise UserError(self.env._(
                 'The terms of a lease with journal entries cannot change: its liability is recognized at their '
                 'present value.'))
         res = super().write(vals)
-        if {'rate', 'rate_type', 'payment_count'} & set(vals) and not self.env.context.get('loan_no_regenerate'):
+        if {'rate', 'rate_type', 'payment_count'} & set(vals) and not internal(self.env, NO_REGENERATE):
             self.filtered(lambda loan: loan.state == 'running')._generate_schedule()
         return res
+
+    def _creation_message(self):
+        self.ensure_one()
+        if self.loan_type == 'lease':
+            return self.env._('Lease created')
+        return self.env._('Loan created')
 
     @api.ondelete(at_uninstall=False)
     def _unlink_except_entries(self):
@@ -459,8 +488,13 @@ class AccountLoan(models.Model):
     # ------------------------------------------------------------
 
     def _has_entries(self):
+        """ Whether the loan has posted entries that are not cancelled by a reversal: an operation or a payment
+        cancelled leaves its entry and the reversal of it, which cancel out. """
         self.ensure_one()
-        return bool(self.move_ids.filtered(lambda move: move.state == 'posted'))
+        posted = self.move_ids.filtered(lambda move: move.state == 'posted')
+        reversed_pairs = posted.filtered(lambda move: move.reversed_entry_id in posted)
+        reversed_pairs |= reversed_pairs.reversed_entry_id
+        return bool(posted - reversed_pairs)
 
     def _check_configuration(self):
         self.ensure_one()
@@ -473,6 +507,12 @@ class AccountLoan(models.Model):
             raise UserError(self.env._(
                 'Set these fields on the loan %(loan)s first: %(fields)s.',
                 loan=self.display_name, fields=', '.join(missing)))
+        if self.currency_id.compare_amounts(self.principal, 0.0) <= 0:
+            if self.loan_type == 'lease':
+                raise UserError(self.env._(
+                    'The lease %s has no liability: enter its lease payment, its number of payments and its rate.',
+                    self.display_name))
+            raise UserError(self.env._('Enter the principal of the loan %s.', self.display_name))
         if self.schedule_method == 'imported' and not self.line_ids:
             raise UserError(self.env._('Import the schedule of the loan %s first.', self.display_name))
 
@@ -712,9 +752,9 @@ class AccountLoan(models.Model):
                 else:
                     commands.append(Command.create(vals))
             commands += [Command.unlink(line.id) for line in lines]
-            loan.with_context(loan_schedule_update=True).line_ids = commands
+            loan.with_context(**internal_context(SCHEDULE_UPDATE)).line_ids = commands
             if loan.schedule_method == 'imported' and loan.payment_count != len(kept) + len(values):
-                loan.with_context(loan_no_regenerate=True).payment_count = max(len(kept) + len(values), 1)
+                loan.with_context(**internal_context(NO_REGENERATE)).payment_count = max(len(kept) + len(values), 1)
             loan._chain_balances()
 
     def _regenerate_from(self, rate_date):
@@ -755,7 +795,7 @@ class AccountLoan(models.Model):
                 balance = currency.round(balance - principal)
                 previous = max(previous, line.date)
             for line, vals in updates:
-                line.with_context(loan_schedule_update=True).write(vals)
+                line.with_context(**internal_context(SCHEDULE_UPDATE)).write(vals)
 
     # ------------------------------------------------------------
     # Balances at a date
@@ -847,6 +887,18 @@ class AccountLoan(models.Model):
             (self.account_long_term_id, self.currency_id.round(amount - short_term), label),
         ]
 
+    def _check_lock_dates(self, day, journal, has_tax=False):
+        """ Refuse an entry of the loan dated in a locked period: Odoo would post it on a later date, and the
+        schedule would no longer match the books. """
+        self.ensure_one()
+        locks = self.company_id._get_violated_lock_dates(day, has_tax, journal)
+        if locks:
+            raise UserError(self.env._(
+                'The entry of %(loan)s cannot be dated %(date)s: %(locks)s. Choose a later date, or ask your '
+                'accountant to open the period.',
+                loan=self.display_name, date=format_date(self.env, day),
+                locks=self.env['res.company']._format_lock_dates(locks)))
+
     def _create_move(self, journal, day, lines, entry_type, ref):
         """ Post an entry of the loan.
 
@@ -857,6 +909,8 @@ class AccountLoan(models.Model):
         currency = self.currency_id
         company_currency = self.company_id.currency_id
         lines = [line for line in lines[:-1] if not currency.is_zero(line[1])] + lines[-1:]
+        has_tax = any(extra and extra[0].get('tax_repartition_line_id') for _acc, _amt, _lbl, *extra in lines)
+        self._check_lock_dates(day, journal, has_tax=has_tax)
         total_currency = total_balance = 0.0
         commands = []
         for position, (account, amount, label, *extra) in enumerate(lines):
@@ -928,7 +982,7 @@ class AccountLoan(models.Model):
         })
         self.message_post(body=self.env._(
             'Lease liability of %(amount)s recognized on %(date)s.',
-            amount=currency.format(self.principal), date=self.date_start))
+            amount=currency.format(self.principal), date=format_date(self.env, self.date_start)))
         return operation
 
     # ------------------------------------------------------------
@@ -1003,7 +1057,7 @@ class AccountLoan(models.Model):
         if paid and day <= max(paid.mapped('date')):
             raise UserError(self.env._(
                 'The loan %(loan)s is paid up to %(date)s: date the operation after it.',
-                loan=self.display_name, date=max(paid.mapped('date'))))
+                loan=self.display_name, date=format_date(self.env, max(paid.mapped('date')))))
 
     def _update_state(self):
         """ Close the loans fully repaid, open again the others. """
@@ -1036,12 +1090,13 @@ class AccountLoan(models.Model):
         if later:
             raise UserError(self.env._(
                 'The loan %(loan)s is already reclassified on %(date)s: reclassify in the order of the dates.',
-                loan=self.display_name, date=max(later.mapped('date'))))
+                loan=self.display_name, date=format_date(self.env, max(later.mapped('date')))))
         draft_bills = self.move_ids.filtered(
             lambda move: move.loan_entry_type == 'bill' and move.state == 'draft' and move.date <= day)
         if draft_bills:
             raise UserError(self.env._(
-                'Post the bills of the lease %(lease)s dated up to %(date)s first.', lease=self.display_name, date=day))
+                'Post the bills of the lease %(lease)s dated up to %(date)s first.', lease=self.display_name,
+                date=format_date(self.env, day)))
         amount = self._reclassification_amount(day)
         if self.currency_id.is_zero(amount):
             return self.env['account.move']
@@ -1077,7 +1132,7 @@ class AccountLoan(models.Model):
         start = today + relativedelta(months=-7, day=1)
         loan = self.create({
             'partner_id': Partner.create({'name': 'Harbor Commercial Bank', 'is_company': True}).id,
-            'lender_ref': 'TL-2026-0417',
+            'lender_ref': f'TL-{start.year}-0417',
             'principal': 120000.0,
             'date_start': start,
             'date_first_payment': start + relativedelta(months=1, day=31),
@@ -1106,7 +1161,7 @@ class AccountLoan(models.Model):
         lease = self.create({
             'loan_type': 'lease',
             'partner_id': Partner.create({'name': 'Riverside Office Properties', 'is_company': True}).id,
-            'lender_ref': 'OFFICE-3F-2026',
+            'lender_ref': f'OFFICE-3F-{today.year}',
             'lease_payment': 2500.0,
             'date_start': today + relativedelta(months=-5, day=1),
             'payment_count': 36,

@@ -12,13 +12,13 @@ class AccountLoan(models.Model):
     asset_category_id = fields.Many2one(
         'account.asset.category', string='Right-of-use Asset Category', tracking=True,
         domain="[('type', '=', 'purchase'), ('company_id', '=', company_id)]",
-        groups='account.group_account_invoice',
+        groups='account.group_account_readonly,account.group_account_manager',
         help="Create the right-of-use asset of the lease in this category on its recognition, at the lease "
              "liability, depreciated over the lease term. The initial recognition debits the asset account of "
              "the category.")
     asset_id = fields.Many2one(
         'account.asset.asset', string='Right-of-use Asset', readonly=True, copy=False,
-        groups='account.group_account_invoice')
+        groups='account.group_account_readonly,account.group_account_manager')
 
     @api.constrains('asset_category_id', 'company_id')
     def _check_asset_category(self):

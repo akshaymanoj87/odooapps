@@ -4,6 +4,9 @@ from odoo import api, fields, models
 from odoo.exceptions import UserError
 from odoo.fields import Command
 from odoo.tools import groupby
+from odoo.tools.misc import format_date
+
+from .loan_context import LOAN_REVERSE, SCHEDULE_UPDATE, internal, internal_context
 
 
 # fields set by the schedule, which a paid line keeps
@@ -44,6 +47,9 @@ class AccountLoanLine(models.Model):
     payment_date = fields.Date(string='Paid On', readonly=True, copy=False)
     loan_state = fields.Selection(related='loan_id.state', string='Loan Status')
     is_last_paid = fields.Boolean(compute='_compute_is_last_paid')
+    is_next = fields.Boolean(
+        string='To Post Next', compute='_compute_is_next',
+        help="The next instalment to pay (or lease payment to bill) of a running loan: the schedule is paid in order.")
     bill_status = fields.Selection(
         [('to_bill', 'To Bill'), ('draft', 'Draft Bill'), ('posted', 'Billed'), ('paid', 'Paid')],
         string='Bill', compute='_compute_bill_status', help="Where the bill of a lease payment stands.")
@@ -85,20 +91,30 @@ class AccountLoanLine(models.Model):
             paid = line.loan_id.line_ids.filtered(lambda other: other.state == 'posted')
             line.is_last_paid = line.state == 'posted' and line == paid.sorted('sequence')[-1:]
 
+    @api.depends('state', 'loan_id.state', 'loan_id.line_ids.state', 'loan_id.outstanding_amount')
+    def _compute_is_next(self):
+        for line in self:
+            loan = line.loan_id
+            line.is_next = (
+                line.state == 'draft' and loan.state == 'running' and line == loan.next_line_id
+                # a loan pays nothing before it is drawn down
+                and (loan.loan_type == 'lease' or loan.currency_id.compare_amounts(loan.outstanding_amount, 0.0) > 0)
+            )
+
     def write(self, vals):
-        if not self.env.context.get('loan_schedule_update'):
+        if not internal(self.env, SCHEDULE_UPDATE):
             if SCHEDULE_FIELDS & set(vals) and self.filtered(lambda line: line.state == 'posted'):
                 raise UserError(self.env._('A paid instalment cannot be changed.'))
-            if {'state', 'move_id', 'payment_date'} & set(vals):
+            if {'state', 'move_id', 'payment_date', 'loan_id'} & set(vals):
                 raise UserError(self.env._('Pay an instalment with its Pay button.'))
         res = super().write(vals)
-        if not self.env.context.get('loan_schedule_update') and {'principal', 'date'} & set(vals):
+        if not internal(self.env, SCHEDULE_UPDATE) and {'principal', 'date'} & set(vals):
             self.loan_id._chain_balances()
         return res
 
     @api.ondelete(at_uninstall=False)
     def _unlink_except_paid(self):
-        if not self.env.context.get('loan_schedule_update') and self.filtered(lambda line: line.state == 'posted'):
+        if not internal(self.env, SCHEDULE_UPDATE) and self.filtered(lambda line: line.state == 'posted'):
             raise UserError(self.env._('A paid instalment cannot be deleted.'))
 
     def action_pay(self):
@@ -180,10 +196,28 @@ class AccountLoanLine(models.Model):
         earlier = loan.line_ids.filtered(lambda line: line.state == 'draft' and line.sequence < self.sequence)
         if earlier:
             raise UserError(self.env._('Pay the instalments in their order: %s first.', earlier[0].sequence))
+        if loan.loan_type != 'lease' and loan.currency_id.compare_amounts(loan.outstanding_amount, 0.0) <= 0:
+            raise UserError(self.env._('Nothing is drawn on the loan %s: draw it down first.', loan.display_name))
         if self.currency_id.compare_amounts(self.principal, loan.outstanding_amount) > 0:
             raise UserError(self.env._(
                 'The principal of the instalment exceeds the outstanding principal of the loan %s.',
                 loan.display_name))
+
+    def _check_payment_date(self, day):
+        """ Refuse a payment dated before the start of the loan, or before the payment of the instalment
+        before it: the balances of the loan at a date follow the payment dates. """
+        self.ensure_one()
+        loan = self.loan_id
+        if day < loan.date_start:
+            raise UserError(self.env._(
+                'The payment cannot be dated before the start of the loan %(loan)s, %(date)s.',
+                loan=loan.display_name, date=format_date(self.env, loan.date_start)))
+        paid = loan.line_ids.filtered(lambda line: line.state == 'posted' and line.payment_date)
+        last = max(paid.mapped('payment_date'), default=None)
+        if last and day < last:
+            raise UserError(self.env._(
+                'The instalment before it was paid on %(date)s: date this payment on or after it.',
+                date=format_date(self.env, last)))
 
     def _post_payment(self, day, journal, withholding=None):
         """ Post the payment of the instalment on `day` from `journal`: Dr loan (principal) + Dr interest / Cr
@@ -197,8 +231,12 @@ class AccountLoanLine(models.Model):
         if loan.loan_type == 'lease':
             raise UserError(self.env._('A lease payment is paid with the bill of the lessor: create its bill.'))
         self._check_to_post()
+        self._check_payment_date(day)
         currency = self.currency_id
         withholding = self.withholding if withholding is None else withholding
+        if not loan.withholding_tax_id:
+            # nothing is withheld without a withholding tax: no tax line would book it
+            withholding = 0.0
         move = self.env['account.move']
         if not currency.is_zero(self.amount):
             label = self.env._('%(loan)s - Instalment %(number)s', loan=loan.name, number=self.sequence)
@@ -211,7 +249,7 @@ class AccountLoanLine(models.Model):
                 self.env._('%(loan)s - Withholding tax %(number)s', loan=loan.name, number=self.sequence))
             lines.append((loan._bank_account(journal, 'outbound'), 0.0, label))
             move = loan._create_move(journal, day, lines, 'payment', label)
-        self.with_context(loan_schedule_update=True).write({
+        self.with_context(**internal_context(SCHEDULE_UPDATE)).write({
             'state': 'posted', 'move_id': move.id, 'payment_date': day, 'withholding': withholding})
         loan._update_state()
         return move
@@ -255,6 +293,21 @@ class AccountLoanLine(models.Model):
             'invoice_line_ids': invoice_lines,
         }
 
+    def _check_bill(self, bill):
+        """ Refuse to post the bill of the lease payment when it no longer matches it: the lessor, the currency
+        or the amount before taxes changed on the bill. The taxes may change. """
+        self.ensure_one()
+        loan = self.loan_id
+        currency = self.currency_id
+        untaxed = sum(bill.invoice_line_ids.mapped('price_subtotal'))
+        if bill.commercial_partner_id != loan.partner_id.commercial_partner_id or bill.currency_id != currency \
+                or currency.compare_amounts(untaxed, self.amount):
+            raise UserError(self.env._(
+                'The bill %(bill)s no longer matches the lease payment %(number)s of %(lease)s: %(amount)s before '
+                'taxes, billed by %(lessor)s. Correct the bill, or cancel it on the lease and bill the payment again.',
+                bill=bill.display_name, number=self.sequence, lease=loan.display_name,
+                amount=currency.format(self.amount), lessor=loan.partner_id.display_name))
+
     def _create_bill(self, day=None):
         """ Create the vendor bill of the lessor for the lease payment, dated `day` (its due date by default),
         posted or left in draft as the lease says. The line is then paid with its bill.
@@ -267,12 +320,15 @@ class AccountLoanLine(models.Model):
             raise UserError(self.env._('The instalments of a loan are paid from the bank: pay them.'))
         self._check_to_post()
         day = day or self.date
+        self._check_payment_date(day)
+        loan._check_lock_dates(day, loan.bill_journal_id, has_tax=bool(loan.bill_tax_ids or loan.withholding_tax_id))
         bill = self.env['account.move']
         if not self.currency_id.is_zero(self.amount):
             bill = self.env['account.move'].create(self._prepare_bill_values(day))
-            if loan.bill_posting == 'posted':
-                bill.action_post()
-        self.with_context(loan_schedule_update=True).write({'state': 'posted', 'move_id': bill.id, 'payment_date': day})
+        self.with_context(**internal_context(SCHEDULE_UPDATE)).write(
+            {'state': 'posted', 'move_id': bill.id, 'payment_date': day})
+        if bill and loan.bill_posting == 'posted':
+            bill.action_post()
         loan._update_state()
         return bill
 
@@ -285,18 +341,19 @@ class AccountLoanLine(models.Model):
             later = loan.operation_ids.filtered(lambda op: op.state == 'posted' and op.date > line.date)
             if later:
                 raise UserError(self.env._('Cancel the operations dated after the instalment first.'))
-            move = line.move_id.with_context(loan_reverse=True)
+            move = line.move_id.with_context(**internal_context(LOAN_REVERSE))
             if move.state == 'draft':
                 move.button_cancel()
             elif move.state == 'posted':
                 if move.is_invoice() and move.payment_state not in ('not_paid', 'reversed'):
                     raise UserError(self.env._(
                         'The bill %s is paid: remove its payment first.', move.display_name))
+                loan._check_lock_dates(move.date, move.journal_id, has_tax=bool(move.line_ids.tax_line_id))
                 values = {'date': move.date}
                 if move.is_invoice():
                     values['invoice_date'] = move.invoice_date or move.date
                 move._reverse_moves([values], cancel=True)
-            line.with_context(loan_schedule_update=True).write(
+            line.with_context(**internal_context(SCHEDULE_UPDATE)).write(
                 {'state': 'draft', 'move_id': False, 'payment_date': False})
             line._compute_withholding()
             if loan.loan_type == 'lease':

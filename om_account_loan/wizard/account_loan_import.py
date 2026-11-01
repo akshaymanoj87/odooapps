@@ -7,7 +7,9 @@ from itertools import pairwise
 from odoo import api, fields, models
 from odoo.exceptions import UserError
 from odoo.fields import Command
-from odoo.tools.misc import get_lang
+from odoo.tools.misc import format_date, get_lang
+
+from odoo.addons.om_account_loan.models.loan_context import NO_REGENERATE, SCHEDULE_UPDATE, internal_context
 
 DATE_FORMATS = ('%Y-%m-%d', '%d/%m/%Y', '%d.%m.%Y', '%d-%m-%Y')
 MAX_ERRORS = 10
@@ -159,12 +161,14 @@ class AccountLoanImport(models.TransientModel):
         after = max([loan.date_start, *paid.mapped('date'), *operations.mapped('date')])
         if values[0]['date'] <= after:
             errors.append(self.env._(
-                'Row %(row)s: the first instalment must be due after %(date)s.', row=values[0]['row'], date=after))
+                'Row %(row)s: the first instalment must be due after %(date)s.', row=values[0]['row'],
+                date=format_date(self.env, after)))
         for previous, vals in pairwise(values):
             if vals['date'] <= previous['date']:
                 errors.append(self.env._(
                     'Row %(row)s: the due dates must increase, %(date)s is not after %(previous)s.',
-                    row=vals['row'], date=vals['date'], previous=previous['date']))
+                    row=vals['row'], date=format_date(self.env, vals['date']),
+                    previous=format_date(self.env, previous['date'])))
         total = currency.round(sum(vals['principal'] for vals in values))
         expected = self._principal_to_import()
         if currency.compare_amounts(total, expected):
@@ -201,8 +205,8 @@ class AccountLoanImport(models.TransientModel):
         loan_vals = {'payment_count': len(kept) + len(values)}
         if not kept and not loan._has_entries():
             loan_vals['date_first_payment'] = values[0]['date']
-        loan.with_context(loan_no_regenerate=True).write(loan_vals)
-        loan.with_context(loan_schedule_update=True).line_ids = commands
+        loan.with_context(**internal_context(NO_REGENERATE)).write(loan_vals)
+        loan.with_context(**internal_context(SCHEDULE_UPDATE)).line_ids = commands
         loan._chain_balances()
         loan.message_post(body=self.env._(
             'Schedule of %(count)s instalments imported from %(file)s.',

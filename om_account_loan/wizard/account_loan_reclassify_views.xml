@@ -27,7 +27,7 @@
     </record>
 
     <record id="action_account_loan_reclassify" model="ir.actions.act_window">
-        <field name="name">Loan Reclassification</field>
+        <field name="name">Reclassification</field>
         <field name="res_model">account.loan.reclassify</field>
         <field name="view_mode">form</field>
         <field name="target">new</field>

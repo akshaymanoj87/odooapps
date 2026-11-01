@@ -109,8 +109,12 @@ class TestLoanSchedule(LoanCommon):
         self.assertEqual(lines[3].date, date(2025, 5, 1))
 
     def test_terms_locked_after_entries(self):
-        loan = self._create_loan()
+        loan = self._create_loan(confirm=False)
         loan.principal = 90000.0
+        loan.action_confirm()
+        # running: the terms are fixed, with or without entries
+        with self.assertRaises(UserError):
+            loan.principal = 85000.0
         self._draw(loan)
         with self.assertRaises(UserError):
             loan.principal = 80000.0

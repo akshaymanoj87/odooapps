@@ -164,7 +164,8 @@ class TestLoanEntries(LoanCommon):
         loan = self._pay_three()
         self.assertEqual(loan.outstanding_amount, 75558.28)
         wizard = self.env['account.loan.repay'].create({'loan_id': loan.id, 'date': date(2025, 4, 15)})
-        self.assertEqual(wizard.amount, 75558.28)
+        # the principal repaid is entered: repaying it all closes the loan
+        self.assertEqual(wizard.amount, 0.0)
         self.assertEqual(wizard.interest, 176.3, "14 days of the April period")
         operation = self._repay(loan, date(2025, 4, 15), 20000.0)
         self.assertEqual(operation.interest, 176.3)
