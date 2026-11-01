@@ -298,6 +298,37 @@ class TestLoanEntries(LoanCommon):
         move = loan._reclassify(date(2025, 1, 31))
         self.assertEqual(sum(move.line_ids.mapped('debit')), 100000.0)
 
+    def test_foreign_currency_exchange_difference(self):
+        """ The principal repaid at another rate than the drawdown realizes an exchange difference: the
+        liability keeps its carrying rate, and is back to zero in the company currency once repaid. """
+        # the euro weaker at the first payment, stronger at the second
+        eur = self.setup_other_currency('EUR', rates=[('2025-01-01', 2.0), ('2025-01-15', 2.5), ('2025-02-15', 1.6)])
+        company = self.env.company
+        loan = self._create_loan(currency_id=eur.id, principal=10000.0, payment_count=2)
+        self._draw(loan)
+        first = self._pay(self._lines(loan)[0])
+        exchange = first.loan_exchange_move_id
+        self.assertEqual(exchange.loan_entry_type, 'exchange')
+        self.assertIn(company.income_currency_exchange_account_id, exchange.line_ids.account_id)
+        left = loan._account_balance_at(self.long_term_account, date(2025, 2, 1))
+        self.assertEqual(loan._account_balance_at(self.long_term_account, date(2025, 2, 1), company_currency=True),
+                         eur._convert(left, company.currency_id, company, date(2025, 1, 1)),
+                         "the rest of the liability stays at the rate of the drawdown")
+        # repaid in a stronger euro: a loss
+        last = self._pay(self._lines(loan)[1])
+        self.assertTrue(last.loan_exchange_move_id)
+        self.assertIn(company.expense_currency_exchange_account_id, last.loan_exchange_move_id.line_ids.account_id)
+        self.assertEqual(loan.state, 'closed')
+        self.assertEqual(loan._account_balance_at(self.long_term_account, date(2025, 3, 1), company_currency=True), 0.0)
+        report = self.env['account.loan.report'].create({'date': date(2025, 3, 1)})
+        report._compute_lines()
+        self.assertEqual(report.line_ids.filtered(lambda line: line.loan_id == loan).outstanding_company, 0.0)
+        # cancelling the payment reverses its exchange difference too
+        self._lines(loan)[1].action_cancel_payment()
+        self.assertEqual(last.loan_exchange_move_id.reversal_move_ids.state, 'posted')
+        self.assertEqual(loan._account_balance_at(self.long_term_account, date(2025, 3, 1), company_currency=True),
+                         loan._account_balance_at(self.long_term_account, date(2025, 2, 1), company_currency=True))
+
     def test_foreign_currency(self):
         """ A loan in a foreign currency posts its amount in currency and the company value of the day. """
         eur = self.setup_other_currency('EUR', rates=[('2025-01-01', 2.0)])

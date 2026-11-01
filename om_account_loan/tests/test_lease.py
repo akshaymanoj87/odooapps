@@ -13,6 +13,21 @@ class TestLease(LoanCommon):
     def _payment_term_line(self, bill):
         return bill.line_ids.filtered(lambda aml: aml.display_type == 'payment_term')
 
+    def test_foreign_currency_lease_settles(self):
+        """ A lease in a foreign currency, billed at other rates than its recognition, leaves no balance on its
+        liability in the company currency once billed. """
+        eur = self.setup_other_currency('EUR', rates=[('2025-01-01', 2.0), ('2025-04-15', 2.5), ('2025-08-15', 1.6)])
+        lease = self._create_lease(currency_id=eur.id)
+        lease._reclassify(date(2025, 1, 31))
+        for line in self._lines(lease):
+            line._create_bill()
+        self.assertEqual(lease.state, 'closed')
+        for account in (self.lease_long_term_account, self.lease_short_term_account):
+            self.assertEqual(lease._account_balance_at(account, date(2026, 1, 31)), 0.0)
+            self.assertEqual(lease._account_balance_at(account, date(2026, 1, 31), company_currency=True), 0.0)
+        exchanges = lease.move_ids.filtered(lambda move: move.loan_entry_type == 'exchange')
+        self.assertTrue(exchanges)
+
     def test_present_value(self):
         """ The lease liability is the present value of the payments at the rate of the lease. """
         lease = self._create_lease(confirm=False)

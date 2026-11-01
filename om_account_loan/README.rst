@@ -296,8 +296,17 @@ Multi-currency
 A loan may be in another currency than the company. Its entries are posted in
 the currency of the loan with the value in the company currency at the rate of
 the entry date. The bank journal must be in the currency of the loan or in the
-company currency. The balances in the company currency are not revalued: run
-a currency revaluation of the loan accounts if needed.
+company currency.
+
+The liability stays at its carrying rate, the rate of the drawdowns (of the
+recognition of a lease). The principal repaid at another rate realizes an
+exchange difference: each instalment, early repayment, lease bill or
+reclassification that repays principal posts an Exchange Difference entry on
+its date, between the loan account and the exchange gain or loss account of
+the company (in the exchange journal of the accounting settings). A loan
+repaid in full is back to zero in the company currency as well. Cancelling the
+repayment reverses its exchange difference. The unrealized difference on the
+outstanding principal at a period end is the work of a currency revaluation.
 
 Installation
 ============

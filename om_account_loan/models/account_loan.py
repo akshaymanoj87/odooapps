@@ -887,6 +887,80 @@ class AccountLoan(models.Model):
             (self.account_long_term_id, self.currency_id.round(amount - short_term), label),
         ]
 
+    def _settle_exchange(self, move):
+        """ Realize the exchange difference on the principal that `move` repays, in a loan in a foreign
+        currency: the liability accounts it debits keep the rest of their balance at their carrying rate (the
+        rate of the drawdowns), the difference goes to the exchange gain or loss accounts of the company. A
+        liability repaid in full is back to zero in the company currency too.
+
+        :return: the exchange difference entry, or an empty recordset
+        """
+        self.ensure_one()
+        currency = self.currency_id
+        company = self.company_id
+        company_currency = company.currency_id
+        exchange = self.env['account.move']
+        if currency == company_currency:
+            return exchange
+        commands = []
+        total = 0.0
+        label = self.env._('%(loan)s - Exchange difference', loan=self.name)
+        for account in self.account_long_term_id | self.account_short_term_id:
+            entry_lines = move.line_ids.filtered(lambda line, account=account: line.account_id == account)
+            entry_currency = -sum(entry_lines.mapped('amount_currency'))
+            if currency.compare_amounts(entry_currency, 0.0) >= 0:
+                # not repaid by this entry: a drawdown or the reclassification receiving the principal
+                continue
+            credit_currency = self._account_balance_at(account, move.date)
+            credit_company = self._account_balance_at(account, move.date, company_currency=True)
+            before_currency = credit_currency - entry_currency
+            before_company = credit_company + sum(entry_lines.mapped('balance'))
+            if currency.compare_amounts(before_currency, 0.0) <= 0:
+                continue
+            target = company_currency.round(before_company * credit_currency / before_currency)
+            difference = company_currency.round(target - credit_company)
+            if company_currency.is_zero(difference):
+                continue
+            commands.append(Command.create({
+                'account_id': account.id,
+                'partner_id': self.partner_id.id,
+                'name': label,
+                'currency_id': currency.id,
+                'amount_currency': 0.0,
+                'balance': -difference,
+            }))
+            total += difference
+        if not commands:
+            return exchange
+        if company_currency.compare_amounts(total, 0.0) > 0:
+            account = company.expense_currency_exchange_account_id
+        else:
+            account = company.income_currency_exchange_account_id
+        journal = company.currency_exchange_journal_id or self.journal_id
+        if not account or not journal:
+            raise UserError(self.env._(
+                'Set the exchange gain and loss accounts and journal of %s in the accounting settings: the loan '
+                '%s in a foreign currency realizes an exchange difference.', company.display_name, self.display_name))
+        commands.append(Command.create({
+            'account_id': account.id,
+            'name': label,
+            'currency_id': company_currency.id,
+            'amount_currency': company_currency.round(total),
+            'balance': company_currency.round(total),
+        }))
+        exchange = self.env['account.move'].create({
+            'move_type': 'entry',
+            'journal_id': journal.id,
+            'date': move.date,
+            'ref': label,
+            'loan_id': self.id,
+            'loan_entry_type': 'exchange',
+            'line_ids': commands,
+        })
+        exchange.action_post()
+        move.with_context(**internal_context(LOAN_WRITE)).loan_exchange_move_id = exchange
+        return exchange
+
     def _check_lock_dates(self, day, journal, has_tax=False):
         """ Refuse an entry of the loan dated in a locked period: Odoo would post it on a later date, and the
         schedule would no longer match the books. """
