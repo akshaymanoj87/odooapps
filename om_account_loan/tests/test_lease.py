@@ -146,6 +146,7 @@ class TestLease(LoanCommon):
         self.assertEqual(bill.payment_state, 'reversed')
         refund = bill.reversal_move_ids
         self.assertEqual((refund.move_type, refund.loan_id, refund.loan_entry_type), ('in_refund', lease, 'bill'))
+        self.assertEqual((refund.state, refund.invoice_date), ('posted', bill.invoice_date))
         self.assertEqual(lease.outstanding_amount, 11618.93)
         self.assertEqual(lease._account_balance_at(self.lease_long_term_account, date(2025, 3, 1)), 11618.93)
 
