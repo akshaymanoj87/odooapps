@@ -1,3 +1,4 @@
+import ast
 from datetime import date
 
 from odoo import Command
@@ -52,6 +53,17 @@ class TestLoanReport(LoanCommon):
         action = report.action_view()
         self.assertEqual(action['res_model'], 'account.loan.report.line')
         self.assertEqual(self.env['account.loan.report.line'].search(action['domain']), report.line_ids)
+
+    def test_loans_analysis(self):
+        """ The schedule year by year: the principal of the running loans, not of the drafts. """
+        loan = self._create_loan(payment_count=24)
+        self._create_loan(confirm=False, principal=55555.0)
+        action = self.env.ref('om_account_loan.action_account_loan_analysis')
+        groups = self.env['account.loan.line']._read_group(
+            ast.literal_eval(action.domain), ['date:year'], ['principal:sum', 'interest:sum'])
+        self.assertEqual(len(groups), 3, "2025, 2026 and 2027")
+        self.assertAlmostEqual(sum(principal for _year, principal, _interest in groups), loan.principal, places=2)
+        self.assertAlmostEqual(sum(interest for _year, _principal, interest in groups), loan.interest_total, places=2)
 
     def test_pdf_reports(self):
         loan = self._create_loan()

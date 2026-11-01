@@ -4,6 +4,7 @@ from odoo import fields, models
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
+    loan_auto_reclassify = fields.Boolean(related='company_id.loan_auto_reclassify', readonly=False)
     loan_long_term_account_id = fields.Many2one(
         related='company_id.loan_long_term_account_id', readonly=False)
     loan_short_term_account_id = fields.Many2one(

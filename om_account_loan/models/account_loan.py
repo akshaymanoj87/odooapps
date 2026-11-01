@@ -203,6 +203,8 @@ class AccountLoan(models.Model):
              "is paid in advance.")
     withholding_total = fields.Monetary(string='Total Withholding Tax', compute='_compute_totals')
     note = fields.Html(string='Notes')
+    reclassify_failed_on = fields.Date(
+        readonly=True, copy=False, help="The last month end the monthly reclassification failed on.")
 
     # zero while a draft is filled in (a lease before its payment): checked when the loan is confirmed
     _positive_principal = models.Constraint('CHECK(principal >= 0)', 'The principal of a loan cannot be negative.')
@@ -1145,6 +1147,31 @@ class AccountLoan(models.Model):
     # ------------------------------------------------------------
     # Reclassification
     # ------------------------------------------------------------
+
+    @api.model
+    def _cron_reclassify(self):
+        """ Reclassify the running loans and leases of the companies that ask for it at the end of the month
+        before, once: a loan already reclassified on that date or later is left as it is. A loan that cannot be
+        reclassified says why in its chatter, once per month end, and is tried again the next day. """
+        companies = self.env['res.company'].search([('loan_auto_reclassify', '=', True)])
+        day = fields.Date.context_today(self) + relativedelta(day=1) - ONE_DAY
+        loans = self.search([('company_id', 'in', companies.ids), ('state', '=', 'running'),
+                             ('date_start', '<=', day)])
+        for loan in loans:
+            done = loan.move_ids.filtered(lambda move: (
+                move.loan_entry_type == 'reclassification' and move.state == 'posted' and move.date >= day
+                and not move.reversed_entry_id and not move.reversal_move_ids))
+            if done:
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    loan.with_company(loan.company_id)._reclassify(day)
+            except UserError as error:
+                if loan.reclassify_failed_on != day:
+                    loan.reclassify_failed_on = day
+                    loan.message_post(body=self.env._(
+                        'The loan could not be reclassified at %(date)s: %(error)s',
+                        date=format_date(self.env, day), error=error.args[0]))
 
     def _reclassification_amount(self, day):
         """ What moves from the long-term to the short-term account on `day` (negative: back) so that the

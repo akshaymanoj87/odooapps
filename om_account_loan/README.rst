@@ -340,6 +340,13 @@ For the leases, set the long-term and short-term lease liability accounts
 (the loan accounts when empty), the right-of-use asset account and the
 purchase journal of the bills.
 
+Tick Reclassify the Loans Monthly to have the running loans and leases
+reclassified at each month end without running the wizard: at the beginning
+of each month, a scheduled action reclassifies them at the end of the month
+before, unless they are reclassified on that date already. A loan that cannot
+be reclassified (a locked period, a lease bill left in draft) says why in its
+chatter, once, and is reclassified the next day if it can.
+
 For a withholding tax, create the tax in Accounting > Configuration > Taxes:
 Tax Type Purchases (or None), a negative amount (-1%), the account of the tax
 withheld on its distribution.
@@ -363,9 +370,13 @@ Usage
 * Early Repayment on the loan repays part or all of the principal: enter
   the principal repaid (all of it closes the loan).
 * For a floating rate, add the rate changes in the Rate Changes tab.
-* At each period end, run Accounting > Loans > Reclassification.
+* At each period end, run Accounting > Loans > Reclassification (or tick
+  Reclassify the Loans Monthly in the settings).
 * Reporting > Management > Loans and Leases shows the position of the loans
   and of the leases at a date (or of one type), and prints it.
+* Reporting > Management > Loans Analysis shows the principal, the interest and
+  the instalments of the running and closed loans and leases year by year, as
+  a pivot table or a graph (the schedule lines, paid or to pay).
 
 The Accounting menu of Invoicing, where the Loans are, shows to the users with
 Show Full Accounting Features (Settings > Users, in developer mode), as for the

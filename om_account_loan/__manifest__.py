@@ -26,6 +26,7 @@
         'wizard/account_loan_import_views.xml',
         'report/account_loan_report_views.xml',
         'report/report_loan_templates.xml',
+        'report/account_loan_analysis_views.xml',
         'views/menu.xml',
     ],
     'demo': ['demo/account_loan_demo.xml'],

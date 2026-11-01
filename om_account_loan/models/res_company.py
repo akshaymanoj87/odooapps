@@ -4,6 +4,10 @@ from odoo import fields, models
 class ResCompany(models.Model):
     _inherit = 'res.company'
 
+    loan_auto_reclassify = fields.Boolean(
+        string='Reclassify the Loans Monthly',
+        help="At the beginning of each month, reclassify the running loans and leases at the end of the month "
+             "before: the principal due within 12 months goes to the short-term accounts.")
     loan_long_term_account_id = fields.Many2one(
         'account.account', string='Long-term Loan Account', check_company=True)
     loan_short_term_account_id = fields.Many2one(

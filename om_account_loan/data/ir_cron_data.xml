@@ -11,6 +11,16 @@
         <field name="interval_type">days</field>
     </record>
 
+    <record id="ir_cron_loan_reclassify" model="ir.cron">
+        <field name="name">Loans: reclassify at the month end</field>
+        <field name="model_id" ref="model_account_loan"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_reclassify()</field>
+        <field name="user_id" ref="base.user_root"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+    </record>
+
     <record id="action_account_loan_line_create_bills" model="ir.actions.server">
         <field name="name">Create Bills</field>
         <field name="model_id" ref="model_account_loan_line"/>

@@ -38,6 +38,10 @@
                             </div>
                         </div>
                     </setting>
+                    <setting id="loan_auto_reclassify" company_dependent="1"
+                             help="At the beginning of each month, the running loans and leases are reclassified at the end of the month before: the principal due within 12 months goes to the short-term accounts. A loan that cannot be reclassified (a locked period, a lease bill in draft) says why in its chatter.">
+                        <field name="loan_auto_reclassify"/>
+                    </setting>
                     <setting id="lease_accounts" string="Lease accounts" company_dependent="1"
                              help="The accounts and the journal proposed on the new leases; the lease liability accounts default to the loan accounts.">
                         <div class="content-group">

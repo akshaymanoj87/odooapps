@@ -358,6 +358,8 @@
                 <group>
                     <filter name="group_loan" string="Loan" context="{'group_by': 'loan_id'}"/>
                     <filter name="group_date" string="Due Month" context="{'group_by': 'date:month'}"/>
+                    <filter name="group_type" string="Type" context="{'group_by': 'loan_type'}"/>
+                    <filter name="group_currency" string="Currency" context="{'group_by': 'currency_id'}"/>
                 </group>
             </search>
         </field>
