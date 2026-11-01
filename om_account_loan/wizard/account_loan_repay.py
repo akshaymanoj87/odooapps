@@ -22,7 +22,7 @@ class AccountLoanRepay(models.TransientModel):
     interest = fields.Monetary(
         string='Interest Due', compute='_compute_interest', store=True, readonly=False, precompute=True,
         help="The interest accrued since the last due date, paid with the principal.")
-    withholding_tax_id = fields.Many2one(related='loan_id.withholding_tax_id')
+    withholding_tax_id = fields.Many2one(string='Withholding Tax Rule', related='loan_id.withholding_tax_id')
     withholding = fields.Monetary(
         string='Withholding Tax', compute='_compute_withholding', store=True, readonly=False, precompute=True,
         help="The tax withheld on the interest, deducted from the payment to the lender.")

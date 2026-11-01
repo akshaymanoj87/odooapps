@@ -95,7 +95,7 @@ class LoanCommon(AccountTestInvoicingCommon):
         if isinstance(content, str):
             content = content.encode()
         wizard = cls.env['account.loan.import'].create({
-            'loan_id': loan.id, 'file': base64.b64encode(content), 'filename': filename, 'columns': columns})
+            'loan_id': loan.id, 'file': base64.b64encode(content).decode(), 'filename': filename, 'columns': columns})
         wizard.action_import()
         return wizard
 

@@ -1,4 +1,3 @@
-import base64
 import csv
 import io
 import re
@@ -71,7 +70,7 @@ class AccountLoanImport(models.TransientModel):
     def _read_rows(self):
         """ The rows of the file, as lists of cells (strings, numbers or dates). """
         self.ensure_one()
-        content = base64.b64decode(self.file or b'')
+        content = self.file.content
         if not content:
             raise UserError(self.env._('The file is empty.'))
         if (self.filename or '').lower().endswith('.xlsx') or content[:2] == b'PK':

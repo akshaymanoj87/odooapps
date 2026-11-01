@@ -1,5 +1,7 @@
 from datetime import date
 
+from freezegun import freeze_time
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 
@@ -32,9 +34,11 @@ class TestRightOfUseAsset(LoanCommon):
             'open_asset': True,
         })
 
+    @freeze_time('2025-01-01')
     def test_rou_asset_created(self):
         """ The recognition debits the asset account of the category and creates the asset at the lease
-        liability, depreciated monthly over the 12 months of the lease term. """
+        liability, depreciated monthly over the 12 months of the lease term. On the start of the lease, the
+        asset is still running (once the term is over, it is closed). """
         lease = self._create_lease(asset_category_id=self.category.id)
         recognition = lease.operation_ids.move_id
         self.assertEqual(self._entry(recognition), {

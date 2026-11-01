@@ -5,7 +5,6 @@ from odoo.exceptions import UserError
 from odoo.fields import Command
 from odoo.tools import groupby
 
-from .account_loan import LOAN_TYPES
 
 # fields set by the schedule, which a paid line keeps
 SCHEDULE_FIELDS = {'date', 'opening_balance', 'principal', 'interest', 'rate', 'sequence', 'withholding'}
@@ -23,7 +22,7 @@ class AccountLoanLine(models.Model):
     company_id = fields.Many2one(related='loan_id.company_id', store=True, index=True)
     currency_id = fields.Many2one(related='loan_id.currency_id', store=True)
     partner_id = fields.Many2one(related='loan_id.partner_id', string='Lender')
-    loan_type = fields.Selection(LOAN_TYPES, related='loan_id.loan_type', string='Type', store=True)
+    loan_type = fields.Selection(related='loan_id.loan_type', string='Type', store=True)
     sequence = fields.Integer(string='#', required=True, default=1)
     date = fields.Date(string='Due Date', required=True)
     opening_balance = fields.Monetary(
@@ -293,7 +292,10 @@ class AccountLoanLine(models.Model):
                 if move.is_invoice() and move.payment_state not in ('not_paid', 'reversed'):
                     raise UserError(self.env._(
                         'The bill %s is paid: remove its payment first.', move.display_name))
-                move._reverse_moves([{'date': move.date}], cancel=True)
+                values = {'date': move.date}
+                if move.is_invoice():
+                    values['invoice_date'] = move.invoice_date or move.date
+                move._reverse_moves([values], cancel=True)
             line.with_context(loan_schedule_update=True).write(
                 {'state': 'draft', 'move_id': False, 'payment_date': False})
             line._compute_withholding()
