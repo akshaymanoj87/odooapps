@@ -7,3 +7,4 @@ from . import test_import
 from . import test_tour
 from . import test_protection
 from . import test_automation
+from . import test_tracking

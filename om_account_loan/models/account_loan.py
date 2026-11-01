@@ -171,7 +171,7 @@ class AccountLoan(models.Model):
         string='Bill on the Due Dates', default=True, tracking=True,
         help="Create the bill of each lease payment on its due date, by a daily scheduled action.")
     bill_tax_ids = fields.Many2many(
-        'account.tax', 'account_loan_bill_tax_rel', 'loan_id', 'tax_id', string='Taxes on the Bills',
+        'account.tax', 'account_loan_bill_tax_rel', 'loan_id', 'tax_id', string='Taxes on the Bills', tracking=True,
         check_company=True, domain="[('type_tax_use', '=', 'purchase')]",
         help="The taxes of the lease payments, such as the VAT, on the lines of the bills.")
     withholding_tax_id = fields.Many2one(
@@ -1088,9 +1088,20 @@ class AccountLoan(models.Model):
                 details.append((rep, currency.round(-tax_data['tax_amount'] * rep.factor)))
         return details
 
-    def _withholding_amount(self, base):
-        """ The tax withheld on the interest `base`, in the loan currency. """
+    def _withholding_on_bill_payment(self):
+        """ Whether the tax of a lease is withheld when its bills are paid: a withholding tax of the payments
+        (Withhold, of the Withholding Tax module of Odoo) is left out of the bills and withheld by Odoo on their
+        payment. """
         self.ensure_one()
+        tax = self.withholding_tax_id
+        return self.loan_type == 'lease' and bool(tax._fields.get('is_withholding_tax') and tax.is_withholding_tax)
+
+    def _withholding_amount(self, base):
+        """ The tax withheld on the interest `base`, in the loan currency; nothing on the bills of a lease
+        whose tax is withheld on the payments. """
+        self.ensure_one()
+        if self._withholding_on_bill_payment():
+            return 0.0
         return self.currency_id.round(sum(amount for _rep, amount in self._withholding_details(base)))
 
     def _interest_line_values(self):
@@ -1202,10 +1213,19 @@ class AccountLoan(models.Model):
         if self.currency_id.is_zero(amount):
             return self.env['account.move']
         label = self.env._('%(loan)s - Principal due within 12 months', loan=self.name)
-        return self._create_move(
+        move = self._create_move(
             journal or self.journal_id, day,
             [(self.account_long_term_id, amount, label), (self.account_short_term_id, -amount, label)],
             'reclassification', self.env._('%(loan)s - Reclassification', loan=self.name))
+        if self.currency_id.compare_amounts(amount, 0.0) > 0:
+            self.message_post(body=self.env._(
+                'Reclassified at %(date)s: %(amount)s moved to the short-term account.',
+                date=format_date(self.env, day), amount=self.currency_id.format(amount)))
+        else:
+            self.message_post(body=self.env._(
+                'Reclassified at %(date)s: %(amount)s moved back to the long-term account.',
+                date=format_date(self.env, day), amount=self.currency_id.format(-amount)))
+        return move
 
     # ------------------------------------------------------------
     # Demo

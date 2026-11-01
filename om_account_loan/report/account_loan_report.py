@@ -67,18 +67,31 @@ class AccountLoanReportLine(models.TransientModel):
     company_currency_id = fields.Many2one(related='company_id.currency_id', string='Company Currency')
     date_start = fields.Date(string='Start Date')
     rate = fields.Float(string='Rate (%)', digits=(16, 4), aggregator=None)
-    principal = fields.Monetary(string='Principal')
-    outstanding = fields.Monetary(string='Outstanding Principal')
-    accrued_interest = fields.Monetary(string='Accrued Interest')
+    # in the currency of the loan: not added up, the loans may be in several currencies
+    principal = fields.Monetary(string='Principal', aggregator=None)
+    outstanding = fields.Monetary(string='Outstanding Principal', aggregator=None)
+    accrued_interest = fields.Monetary(string='Accrued Interest', aggregator=None)
     next_date = fields.Date(string='Next Due Date')
-    next_amount = fields.Monetary(string='Next Instalment')
-    due_within = fields.Monetary(string='Due within 12 Months')
-    due_after = fields.Monetary(string='Due after 12 Months')
+    next_amount = fields.Monetary(string='Next Instalment', aggregator=None)
+    due_within = fields.Monetary(string='Due within 12 Months', aggregator=None)
+    due_after = fields.Monetary(string='Due after 12 Months', aggregator=None)
     withheld = fields.Monetary(
-        string='Tax Withheld', help="The tax withheld on the interest paid (or billed) up to the date.")
+        string='Tax Withheld', aggregator=None,
+        help="The tax withheld on the interest paid (or billed) up to the date.")
+    # in the company currency: the totals
     outstanding_company = fields.Monetary(
         string='Outstanding (Company Currency)', currency_field='company_currency_id',
         help="The principal outstanding at its value in the books: the rates of the drawdowns and payments.")
+    due_within_company = fields.Monetary(
+        string='Due within 12 Months (Company Currency)', currency_field='company_currency_id',
+        help="The part of the outstanding in the books due within 12 months.")
+    due_after_company = fields.Monetary(
+        string='Due after 12 Months (Company Currency)', currency_field='company_currency_id')
+    accrued_interest_company = fields.Monetary(
+        string='Accrued Interest (Company Currency)', currency_field='company_currency_id',
+        help="The accrued interest at the rate of the date.")
+    withheld_company = fields.Monetary(
+        string='Tax Withheld (Company Currency)', currency_field='company_currency_id')
 
     @api.model
     def _values_at(self, loan, day):
@@ -92,6 +105,12 @@ class AccountLoanReportLine(models.TransientModel):
         booked = sum(
             loan._account_balance_at(account, day, company_currency=True)
             for account in loan.account_long_term_id | loan.account_short_term_id)
+        company = loan.company_id
+        company_currency = company.currency_id
+        accrued = loan._accrued_interest_at(day) if outstanding else 0.0
+        withheld = sum(paid.mapped('withholding')) + sum(repaid.mapped('withholding'))
+        # the split of the outstanding in the books follows the split of the principal
+        within_company = company_currency.round(booked * within / outstanding) if outstanding else 0.0
         return {
             'loan_id': loan.id,
             'loan_type': loan.loan_type,
@@ -102,11 +121,15 @@ class AccountLoanReportLine(models.TransientModel):
             'rate': loan._rate_at(day),
             'principal': loan.principal,
             'outstanding': outstanding,
-            'accrued_interest': loan._accrued_interest_at(day) if outstanding else 0.0,
+            'accrued_interest': accrued,
             'next_date': following.date,
             'next_amount': following.amount,
             'due_within': within,
             'due_after': loan.currency_id.round(outstanding - within),
             'outstanding_company': booked,
-            'withheld': sum(paid.mapped('withholding')) + sum(repaid.mapped('withholding')),
+            'due_within_company': within_company,
+            'due_after_company': company_currency.round(booked - within_company),
+            'accrued_interest_company': loan.currency_id._convert(accrued, company_currency, company, day),
+            'withheld': withheld,
+            'withheld_company': loan.currency_id._convert(withheld, company_currency, company, day),
         }

@@ -211,6 +211,10 @@ are posted, or left in draft to check (Lease Bills on the lease); the taxes on
 the bills (such as the VAT) go on all the lines, the withholding tax on the
 interest line. The bill is then paid like any vendor bill.
 
+In the localizations whose purchase journals use documents (Latin America),
+the bill is left in draft for the number of the lessor's document, whatever
+the Lease Bills setting: enter it and post the bill.
+
 The amounts come from the schedule: change the line before billing it. A
 draft bill keeps the lessor, the currency and the amount before taxes of its
 lease payment: posting it refuses a bill changed otherwise (the taxes may
@@ -255,7 +259,8 @@ Dr Long-term loan 8,106.64 and Dr Interest expense 500.00 / Cr Withholding tax
 The tax is computed by the taxes of Odoo. When a localization defers it to
 the payments (the Withholding option of the Withholding Tax module of Odoo,
 used by some charts of accounts), the bills leave it to the Pay button of the
-bill, as for any bill; the payments of the loans withhold it themselves.
+bill, as for any bill, and the schedule and the report of the lease do not
+count it as withheld; the payments of the loans withhold it themselves.
 
 Imported schedules
 ==================
@@ -373,7 +378,9 @@ Usage
 * At each period end, run Accounting > Loans > Reclassification (or tick
   Reclassify the Loans Monthly in the settings).
 * Reporting > Management > Loans and Leases shows the position of the loans
-  and of the leases at a date (or of one type), and prints it.
+  and of the leases at a date (or of one type), and prints it. The amounts are
+  in the currency of each loan, the totals in the company currency (the
+  outstanding at its value in the books).
 * Reporting > Management > Loans Analysis shows the principal, the interest and
   the instalments of the running and closed loans and leases year by year, as
   a pivot table or a graph (the schedule lines, paid or to pay).

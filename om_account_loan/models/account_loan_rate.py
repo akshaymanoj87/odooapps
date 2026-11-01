@@ -31,17 +31,33 @@ class AccountLoanRate(models.Model):
     def create(self, vals_list):
         changes = super().create(vals_list)
         changes._regenerate(min(changes.mapped('date'), default=None))
+        for change in changes.filtered(lambda change: change.loan_id.state != 'draft'):
+            change.loan_id.message_post(body=self.env._(
+                'Rate change: %(rate)s %% from %(date)s.', rate=change._format_rate(),
+                date=format_date(self.env, change.date)))
         return changes
 
     def write(self, vals):
         dates = self.mapped('date')
         res = super().write(vals)
         self._regenerate(min(dates + self.mapped('date'), default=None))
+        if {'date', 'rate'} & set(vals):
+            for change in self.filtered(lambda change: change.loan_id.state != 'draft'):
+                change.loan_id.message_post(body=self.env._(
+                    'Rate change modified: %(rate)s %% from %(date)s.', rate=change._format_rate(),
+                    date=format_date(self.env, change.date)))
         return res
+
+    def _format_rate(self):
+        return f'{self.rate:.4f}'.rstrip('0').rstrip('.')
 
     def unlink(self):
         loans = self.loan_id
         dates = self.mapped('date')
+        for change in self.filtered(lambda change: change.loan_id.state != 'draft'):
+            change.loan_id.message_post(body=self.env._(
+                'Rate change of %(date)s removed (%(rate)s %%).', rate=change._format_rate(),
+                date=format_date(self.env, change.date)))
         res = super().unlink()
         loans._regenerate_from(min(dates, default=None))
         return res

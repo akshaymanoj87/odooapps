@@ -197,11 +197,17 @@
                             </tbody>
                         </table>
                         <t t-set="currencies" t-value="report.line_ids.company_currency_id"/>
-                        <p t-if="len(currencies) == 1 and report.line_ids">
-                            <strong>Outstanding in the books:</strong>
-                            <span t-out="sum(report.line_ids.mapped('outstanding_company'))"
-                                  t-options="{'widget': 'monetary', 'display_currency': currencies}"/>
-                        </p>
+                        <div t-if="len(currencies) == 1 and report.line_ids">
+                            <div><strong>Outstanding in the books:</strong>
+                                <span t-out="sum(report.line_ids.mapped('outstanding_company'))"
+                                      t-options="{'widget': 'monetary', 'display_currency': currencies}"/></div>
+                            <div>Due within 12 months:
+                                <span t-out="sum(report.line_ids.mapped('due_within_company'))"
+                                      t-options="{'widget': 'monetary', 'display_currency': currencies}"/></div>
+                            <div>Due after 12 months:
+                                <span t-out="sum(report.line_ids.mapped('due_after_company'))"
+                                      t-options="{'widget': 'monetary', 'display_currency': currencies}"/></div>
+                        </div>
                     </div>
                 </t>
             </t>

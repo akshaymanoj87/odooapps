@@ -58,6 +58,10 @@
                 <field name="due_after"/>
                 <field name="withheld" optional="hide"/>
                 <field name="outstanding_company" sum="Total" optional="show"/>
+                <field name="due_within_company" sum="Total" optional="hide"/>
+                <field name="due_after_company" sum="Total" optional="hide"/>
+                <field name="accrued_interest_company" sum="Total" optional="hide"/>
+                <field name="withheld_company" sum="Total" optional="hide"/>
             </list>
         </field>
     </record>
@@ -68,12 +72,11 @@
         <field name="arch" type="xml">
             <pivot string="Loan Report" sample="1">
                 <field name="partner_id" type="row"/>
-                <field name="currency_id" type="col"/>
-                <field name="outstanding" type="measure"/>
-                <field name="accrued_interest" type="measure"/>
-                <field name="due_within" type="measure"/>
-                <field name="due_after" type="measure"/>
-                <field name="withheld" type="measure"/>
+                <field name="loan_type" type="col"/>
+                <field name="outstanding_company" type="measure"/>
+                <field name="due_within_company" type="measure"/>
+                <field name="due_after_company" type="measure"/>
+                <field name="accrued_interest_company" type="measure"/>
             </pivot>
         </field>
     </record>

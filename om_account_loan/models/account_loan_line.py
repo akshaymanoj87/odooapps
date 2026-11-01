@@ -102,15 +102,36 @@ class AccountLoanLine(models.Model):
             )
 
     def write(self, vals):
+        changes = []
         if not internal(self.env, SCHEDULE_UPDATE):
             if SCHEDULE_FIELDS & set(vals) and self.filtered(lambda line: line.state == 'posted'):
                 raise UserError(self.env._('A paid instalment cannot be changed.'))
             if {'state', 'move_id', 'payment_date', 'loan_id'} & set(vals):
                 raise UserError(self.env._('Pay an instalment with its Pay button.'))
+            changes = [(line, line._describe_change(vals)) for line in self]
         res = super().write(vals)
+        for line, description in changes:
+            if description:
+                line.loan_id.message_post(body=self.env._(
+                    'Instalment %(number)s changed: %(changes)s.', number=line.sequence, changes=description))
         if not internal(self.env, SCHEDULE_UPDATE) and {'principal', 'date'} & set(vals):
             self.loan_id._chain_balances()
         return res
+
+    def _describe_change(self, vals):
+        """ The changes `vals` makes to the due date or the amounts of the line, as a text for the chatter. """
+        self.ensure_one()
+        currency = self.currency_id
+        parts = []
+        if 'date' in vals and fields.Date.to_date(vals['date']) != self.date:
+            parts.append(self.env._('due date %(old)s to %(new)s', old=format_date(self.env, self.date),
+                                    new=format_date(self.env, fields.Date.to_date(vals['date']))))
+        for fname in ('principal', 'interest'):
+            if fname in vals and currency.compare_amounts(vals[fname] or 0.0, self[fname]):
+                parts.append(self.env._(
+                    '%(field)s %(old)s to %(new)s', field=self._fields[fname].get_description(self.env)['string'],
+                    old=currency.format(self[fname]), new=currency.format(vals[fname] or 0.0)))
+        return ', '.join(parts)
 
     @api.ondelete(at_uninstall=False)
     def _unlink_except_paid(self):
@@ -251,6 +272,18 @@ class AccountLoanLine(models.Model):
             move = loan._create_move(journal, day, lines, 'payment', label)
         self.with_context(**internal_context(SCHEDULE_UPDATE)).write({
             'state': 'posted', 'move_id': move.id, 'payment_date': day, 'withholding': withholding})
+        if currency.is_zero(withholding):
+            loan.message_post(body=self.env._(
+                'Instalment %(number)s paid on %(date)s: %(amount)s (principal %(principal)s, interest '
+                '%(interest)s).', number=self.sequence, date=format_date(self.env, day),
+                amount=currency.format(self.amount), principal=currency.format(self.principal),
+                interest=currency.format(self.interest)))
+        else:
+            loan.message_post(body=self.env._(
+                'Instalment %(number)s paid on %(date)s: %(amount)s (principal %(principal)s, interest '
+                '%(interest)s), %(withheld)s withheld.', number=self.sequence, date=format_date(self.env, day),
+                amount=currency.format(self.amount), principal=currency.format(self.principal),
+                interest=currency.format(self.interest), withheld=currency.format(withholding)))
         loan._update_state()
         return move
 
@@ -328,7 +361,16 @@ class AccountLoanLine(models.Model):
         self.with_context(**internal_context(SCHEDULE_UPDATE)).write(
             {'state': 'posted', 'move_id': bill.id, 'payment_date': day})
         if bill and loan.bill_posting == 'posted':
-            bill.action_post()
+            if bill._loan_needs_document_number():
+                loan.message_post(body=self.env._(
+                    'The bill %(bill)s is left in draft: its journal asks for the document number of the lessor. '
+                    'Enter it and post the bill.', bill=bill.display_name))
+            else:
+                bill.action_post()
+        if bill:
+            loan.message_post(body=self.env._(
+                'Bill %(bill)s of the lease payment %(number)s created: %(amount)s before taxes.',
+                bill=bill.display_name, number=self.sequence, amount=self.currency_id.format(self.amount)))
         loan._update_state()
         return bill
 

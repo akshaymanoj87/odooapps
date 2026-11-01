@@ -55,6 +55,13 @@ class AccountMove(models.Model):
             move.loan_id._settle_exchange(move)
         return posted
 
+    def _loan_needs_document_number(self):
+        """ Whether the bill needs a document number entered by hand before it is posted: the journals using
+        documents (the localizations of Latin America) ask for the number of the lessor's document. """
+        self.ensure_one()
+        journal = self.journal_id
+        return bool(journal._fields.get('l10n_latam_use_documents') and journal.l10n_latam_use_documents)
+
     def _check_draftable(self):
         super()._check_draftable()
         if self._loan_schedule_entries() and not internal(self.env, LOAN_REVERSE):
@@ -83,9 +90,12 @@ class AccountMove(models.Model):
         if exchanges:
             exchanges.with_context(**internal_context(LOAN_REVERSE))._reverse_moves(
                 [{'date': move.date} for move in exchanges], cancel=True)
-        for move, values in zip(self.sudo(), default_values_list, strict=True):
-            if move.loan_id:
-                # the reversal stays in the balances of the loan
-                values.setdefault('loan_id', move.loan_id.id)
-                values.setdefault('loan_entry_type', move.loan_entry_type)
-        return super()._reverse_moves(default_values_list=default_values_list, cancel=cancel)
+        reversals = super()._reverse_moves(default_values_list=default_values_list, cancel=cancel)
+        # the reversal stays in the balances of the loan; written by the loan, as the user reversing an entry
+        # (an invoicing user reversing a reclassification) may not see the loan fields
+        for reversal in reversals.sudo():
+            original = reversal.reversed_entry_id
+            if original.loan_id:
+                reversal.with_context(**internal_context(LOAN_WRITE)).write({
+                    'loan_id': original.loan_id.id, 'loan_entry_type': original.loan_entry_type})
+        return reversals
