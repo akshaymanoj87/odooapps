@@ -45,7 +45,7 @@ class LoanCommon(AccountTestInvoicingCommon):
             'lease_bill_journal_id': cls.purchase_journal.id,
         })
         cls.lessor = cls.env['res.partner'].create({'name': 'Test Properties', 'is_company': True})
-        # a withholding tax of 1% on the interest, as the P.N.D. 53 of Thailand
+        # a withholding tax of 1% on the interest
         cls.withholding_account = Account.create({
             'code': '213900', 'name': 'Withholding Tax Payable', 'account_type': 'liability_current'})
         cls.withholding_tax = cls._create_withholding_tax(-1.0)

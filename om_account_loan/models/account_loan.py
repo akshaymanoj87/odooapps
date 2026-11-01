@@ -169,8 +169,9 @@ class AccountLoan(models.Model):
     withholding_tax_id = fields.Many2one(
         'account.tax', string='Withholding Tax', check_company=True, tracking=True,
         domain="[('type_tax_use', 'in', ('purchase', 'none')), ('amount', '<', 0)]",
-        help="The tax withheld on the interest, such as 1% in Thailand (P.N.D. 53): it is deducted from what is "
-             "paid to the lender and booked on the account of the tax. A tax with a negative amount.")
+        help="The tax the borrower withholds on the interest, where the law asks for it: it is deducted from what "
+             "is paid to the lender and booked on the account of the tax. A tax with a negative amount, "
+             "e.g. -1%.")
     state = fields.Selection(
         [('draft', 'Draft'), ('running', 'Running'), ('closed', 'Closed'), ('cancel', 'Cancelled')],
         string='Status', required=True, default='draft', readonly=True, copy=False, tracking=True)

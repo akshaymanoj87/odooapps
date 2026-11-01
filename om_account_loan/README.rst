@@ -50,9 +50,9 @@ Features
 * Leases: the lease liability at the present value of the lease payments,
   recognized against the right-of-use asset, and each payment billed by the
   lessor on its due date (see Leases below).
-* A withholding tax on the interest, such as the 1% of Thailand (P.N.D. 53):
-  deducted from what is paid to the lender and booked on the account of the
-  tax (see The withholding tax below).
+* A withholding tax on the interest, where the law asks for one: deducted
+  from what is paid to the lender and booked on the account of the tax (see
+  The withholding tax below).
 * Record rules per company; the accounting administrators run the loans,
   the accountants and auditors read them, the invoicing users do not see them.
 
@@ -219,10 +219,10 @@ The withholding tax
 ===================
 
 Some countries make the borrower withhold a tax on the interest it pays and
-pay it to the tax office: in Thailand, 1% on the interest paid to a company
-(P.N.D. 53). Set this tax as the Withholding Tax of the loan or lease: a tax of
-the company with a negative amount (-1%), its distribution giving the account
-of the tax withheld (and the tax grids). Then:
+pay it to the tax office, e.g. 1% of the interest. Set this tax as the
+Withholding Tax of the loan or lease: a tax of the company with a negative
+amount (-1%), its distribution giving the account of the tax withheld (and
+the tax grids). Then:
 
 * the schedule shows on each line the tax withheld on its interest and the
   net payment, the PDF of the loan too, and the Loan Report the tax withheld up
@@ -241,8 +241,8 @@ Dr Long-term loan 8,106.64 and Dr Interest expense 500.00 / Cr Withholding tax
 5.00 and Cr Outstanding Payments 8,601.64.
 
 The tax is computed by the taxes of Odoo. When a localization defers it to
-the payments (the Withholding option of the Withholding Tax module of Odoo, as
-in the Thai chart of accounts), the bills leave it to the Pay button of the
+the payments (the Withholding option of the Withholding Tax module of Odoo,
+used by some charts of accounts), the bills leave it to the Pay button of the
 bill, as for any bill; the payments of the loans withhold it themselves.
 
 Imported schedules
